@@ -51,7 +51,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
         const { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
 
         // --- Firebase 配置與初始化 ---
@@ -111,6 +111,12 @@
             // 最終定案形式選擇
             const [tempConfirmedMode, setTempConfirmedMode] = useState('physical');
 
+            // 備註區塊本地狀態，用於平滑打字
+            const [localRemarks, setLocalRemarks] = useState('');
+            const [localTeacherRemarks, setLocalTeacherRemarks] = useState('');
+            const remarksTimer = useRef(null);
+            const teacherRemarksTimer = useRef(null);
+
             // --- 身分驗證 ---
             useEffect(() => {
                 const initAuth = async () => {
@@ -167,6 +173,14 @@
 
             const currentMeeting = useMemo(() => meetings.find(m => m.id === selectedStudentId), [meetings, selectedStudentId]);
 
+            // 當切換學生時，同步備註本地緩衝
+            useEffect(() => {
+                if (currentMeeting) {
+                    setLocalRemarks(currentMeeting.remarks || '');
+                    setLocalTeacherRemarks(currentMeeting.teacherRemarks || '');
+                }
+            }, [selectedStudentId, currentMeeting]);
+
             const filteredMeetings = useMemo(() => {
                 if (activeTeacher === 'all') return meetings;
                 return meetings.filter(m => m.manager === activeTeacher);
@@ -198,6 +212,23 @@
             const updateMeetingField = async (id, field, value) => {
                 if(!id || !user) return;
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id), { [field]: value });
+            };
+
+            // 平滑打字處理 (Debounce)
+            const handleRemarksChange = (val) => {
+                setLocalRemarks(val);
+                if (remarksTimer.current) clearTimeout(remarksTimer.current);
+                remarksTimer.current = setTimeout(() => {
+                    updateMeetingField(selectedStudentId, 'remarks', val);
+                }, 800);
+            };
+
+            const handleTeacherRemarksChange = (val) => {
+                setLocalTeacherRemarks(val);
+                if (teacherRemarksTimer.current) clearTimeout(teacherRemarksTimer.current);
+                teacherRemarksTimer.current = setTimeout(() => {
+                    updateMeetingField(selectedStudentId, 'teacherRemarks', val);
+                }, 800);
             };
 
             const updateTeacherConfig = async (tName, field, value) => {
@@ -236,6 +267,8 @@
                 setRole('home'); setSelectedStudentId(null); setIsAuth(false); setPassword(''); 
                 setIsStudentAuthorized(false); setStudentPasswordInput(''); 
                 setAdminPwdError(''); setStudentPwdError('');
+                setShowAdminPwd(false); setShowStudentPwd(false);
+                setLocalRemarks(''); setLocalTeacherRemarks('');
             };
 
             const Matrix = ({ mode, teacherName, currentData, onToggle, disabled = false }) => {
@@ -296,7 +329,7 @@
                         </div>
                         <div className="flex bg-slate-100 p-1 rounded-xl border">
                             {['sped', 'parent', 'teacher'].map(r => (
-                                <button key={r} onClick={() => { setRole(r); setIsAuth(false); setSelectedStudentId(null); setIsStudentAuthorized(false); }} className={`px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${role === r ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>{r==='sped'?'特師':r==='parent'?'家長':'導師'}</button>
+                                <button key={r} onClick={() => { setRole(r); setIsAuth(false); setSelectedStudentId(null); setIsStudentAuthorized(false); }} className={`px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${role === r ? 'bg-white shadow-sm text-blue-600' : 'text-slate-50'}`}>{r==='sped'?'特師':r==='parent'?'家長':'導師'}</button>
                             ))}
                         </div>
                     </nav>
@@ -323,7 +356,23 @@
                                 <div className="bg-white p-8 rounded-[40px] shadow-xl border">
                                     <div className="bg-blue-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-6"><Icon name="lock" /></div>
                                     <h2 className="text-xl font-black mb-6 uppercase">特師管理登入</h2>
-                                    <input type={showAdminPwd ? "text" : "password"} placeholder="管理驗證碼" className="w-full border-2 rounded-xl px-4 py-3 text-center mb-4 outline-none focus:border-blue-500" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdminLogin()}/>
+                                    <div className="relative mb-4">
+                                        <input 
+                                            type={showAdminPwd ? "text" : "password"} 
+                                            placeholder="管理驗證碼" 
+                                            className="w-full border-2 rounded-xl px-4 py-3 text-center outline-none focus:border-blue-500 pr-12" 
+                                            value={password} 
+                                            onChange={e=>setPassword(e.target.value)} 
+                                            onKeyDown={e=>e.key==='Enter'&&handleAdminLogin()}
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={() => setShowAdminPwd(!showAdminPwd)}
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+                                        >
+                                            <Icon name={showAdminPwd ? "eye-off" : "eye"} className="w-5 h-5" />
+                                        </button>
+                                    </div>
                                     {adminPwdError && <p className="text-red-500 text-xs mb-4 font-bold">{adminPwdError}</p>}
                                     <button onClick={handleAdminLogin} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md">進入系統</button>
                                 </div>
@@ -541,10 +590,26 @@
                         {selectedStudentId && currentMeeting && (
                             (!isStudentAuthorized && role !== 'sped') ? (
                                 <div className="max-w-sm mx-auto py-20 animate-fade-in text-center">
-                                    <div className="bg-white p-8 rounded-[40px] shadow-xl border">
-                                        <Icon name="key-round" className="w-12 h-12 text-amber-600 mx-auto mb-6" />
+                                    <div className="bg-white p-8 rounded-[40px] shadow-xl border relative overflow-hidden">
+                                        <div className="bg-amber-50 text-amber-600 w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-6"><Icon name="key-round" /></div>
                                         <h2 className="text-sm font-black mb-6 uppercase tracking-widest">請輸入密碼</h2>
-                                        <input type={showStudentPwd ? "text" : "password"} placeholder="請輸入密碼" className="w-full border-2 rounded-xl px-4 py-3 text-center mb-2 text-xl font-bold tracking-widest focus:border-amber-500 outline-none" value={studentPasswordInput} onChange={e=>setStudentPasswordInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleStudentVerify()}/>
+                                        <div className="relative mb-2">
+                                            <input 
+                                                type={showStudentPwd ? "text" : "password"} 
+                                                placeholder="請輸入密碼" 
+                                                className="w-full border-2 rounded-xl px-4 py-3 text-center text-xl font-bold tracking-widest focus:border-amber-500 outline-none pr-12 bg-slate-50" 
+                                                value={studentPasswordInput} 
+                                                onChange={e=>setStudentPasswordInput(e.target.value)} 
+                                                onKeyDown={e=>e.key==='Enter'&&handleStudentVerify()}
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowStudentPwd(!showStudentPwd)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-600 transition-colors"
+                                            >
+                                                <Icon name={showStudentPwd ? "eye-off" : "eye"} className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                         {studentPwdError && <p className="text-red-500 text-[10px] font-bold mb-4">{studentPwdError}</p>}
                                         <div className="flex gap-3">
                                             <button onClick={resetToHome} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-slate-500 text-xs">返回</button>
@@ -653,13 +718,24 @@
                                             {(role === 'parent' || role === 'sped') && (
                                                 <div className="bg-white p-8 rounded-[40px] border">
                                                     <h4 className="font-black text-xl mb-4 text-slate-700">家長溝通備註</h4>
-                                                    <textarea disabled={currentMeeting.parentLocked && role==='parent'} value={currentMeeting.remarks || ''} onChange={e=>updateMeetingField(currentMeeting.id,'remarks',e.target.value)} placeholder="如有希望針對孩子討論的重點..." className="w-full border-2 rounded-3xl p-6 outline-none focus:border-blue-500 font-bold bg-slate-50 min-h-[150px]"/>
+                                                    <textarea 
+                                                        disabled={currentMeeting.parentLocked && role==='parent'} 
+                                                        value={localRemarks} 
+                                                        onChange={e=>handleRemarksChange(e.target.value)} 
+                                                        placeholder="如有希望針對孩子討論的重點..." 
+                                                        className="w-full border-2 rounded-3xl p-6 outline-none focus:border-blue-500 font-bold bg-slate-50 min-h-[150px]"
+                                                    />
                                                 </div>
                                             )}
                                             {(role === 'teacher' || role === 'sped') && (
                                                 <div className="bg-white p-8 rounded-[40px] border">
                                                     <h4 className="font-black text-xl mb-4 text-slate-700">導師溝通備註</h4>
-                                                    <textarea value={currentMeeting.teacherRemarks || ''} onChange={e=>updateMeetingField(currentMeeting.id,'teacherRemarks',e.target.value)} placeholder="如需特殊課務協調或回饋事項..." className="w-full border-2 rounded-3xl p-6 outline-none focus:border-blue-500 font-bold bg-slate-50 min-h-[150px]"/>
+                                                    <textarea 
+                                                        value={localTeacherRemarks} 
+                                                        onChange={e=>handleTeacherRemarksChange(e.target.value)} 
+                                                        placeholder="如需特殊課務協調或回饋事項..." 
+                                                        className="w-full border-2 rounded-3xl p-6 outline-none focus:border-blue-500 font-bold bg-slate-50 min-h-[150px]"
+                                                    />
                                                 </div>
                                             )}
                                         </div>
@@ -703,6 +779,19 @@
                                                         ) : <div className="text-center py-10 opacity-20"><p className="font-bold text-xs uppercase tracking-widest">等待資料...</p></div>}
                                                     </div>
                                                 )}
+                                            </div>
+                                            <div className="bg-white p-6 rounded-[30px] border shadow-sm">
+                                                <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">個案狀態追蹤</h4>
+                                                <div className="space-y-4 font-bold text-sm">
+                                                    <div className="flex justify-between items-center">
+                                                        <span>家長意願</span>
+                                                        <span className={currentMeeting.parentLocked ? "text-emerald-500" : "text-slate-300"}>{currentMeeting.parentLocked ? "已提交" : "填寫中"}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span>導師回報</span>
+                                                        <span className={currentMeeting.teacherPrefs?.length > 0 || currentMeeting.teacherUnavailable ? "text-emerald-500" : "text-slate-300"}>{currentMeeting.teacherUnavailable ? "不克出席" : (currentMeeting.teacherPrefs?.length > 0 ? "已同步" : "未填寫")}</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </aside>
                                     </div>
