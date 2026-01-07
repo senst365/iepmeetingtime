@@ -54,8 +54,18 @@
         const { useState, useEffect, useMemo } = React;
         const { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
 
-        // --- Firebase 初始化 (使用環境變數) ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "" };
+        // --- Firebase 配置與初始化 ---
+        const userFirebaseConfig = {
+            apiKey: "AIzaSyBirOQwZgEs-G1F8diLxjqv9Q-RQu72ZJ4",
+            authDomain: "iep-meeting-time.firebaseapp.com",
+            projectId: "iep-meeting-time",
+            storageBucket: "iep-meeting-time.firebasestorage.app",
+            messagingSenderId: "859481078114",
+            appId: "1:859481078114:web:6e2779f007ecb7a9c7143b",
+            measurementId: "G-LB9T9HZKF9"
+        };
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig;
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -98,7 +108,10 @@
             const [activeTeacher, setActiveTeacher] = useState('all');
             const [createTeacher, setCreateTeacher] = useState('李老師');
 
-            // --- 身分驗證流程 ---
+            // 最終定案形式選擇
+            const [tempConfirmedMode, setTempConfirmedMode] = useState('physical');
+
+            // --- 身分驗證 ---
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -116,7 +129,7 @@
                 return () => unsubscribe();
             }, []);
 
-            // --- 資料監聽流程 ---
+            // --- 資料監聽 ---
             useEffect(() => {
                 if (!user) return;
                 
@@ -124,8 +137,7 @@
                     collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), 
                     (snapshot) => {
                         setMeetings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                    },
-                    (error) => console.error("Meetings snapshot error:", error)
+                    }
                 );
 
                 const teachers = ["李老師", "傅老師"];
@@ -142,8 +154,7 @@
                                     }
                                 }));
                             }
-                        },
-                        (error) => console.error(`Config snapshot error (${tName}):`, error)
+                        }
                     );
                 });
 
@@ -208,8 +219,7 @@
 
             const deleteStudent = async (id) => {
                 if(!user) return;
-                const target = meetings.find(m => m.id === id);
-                if (window.confirm(`確定要永久刪除「${target?.studentName}」的資料嗎？`)) {
+                if (window.confirm(`確定要永久刪除此個案資料嗎？`)) {
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id));
                 }
             };
@@ -223,14 +233,9 @@
             };
 
             const resetToHome = () => { 
-                setRole('home'); 
-                setSelectedStudentId(null); 
-                setIsAuth(false); 
-                setPassword(''); 
-                setIsStudentAuthorized(false); 
-                setStudentPasswordInput(''); 
-                setAdminPwdError('');
-                setStudentPwdError('');
+                setRole('home'); setSelectedStudentId(null); setIsAuth(false); setPassword(''); 
+                setIsStudentAuthorized(false); setStudentPasswordInput(''); 
+                setAdminPwdError(''); setStudentPwdError('');
             };
 
             const Matrix = ({ mode, teacherName, currentData, onToggle, disabled = false }) => {
@@ -334,7 +339,7 @@
                                         ))}
                                     </div>
                                     <div className="flex gap-2 items-center bg-slate-50 p-1 rounded-xl border">
-                                        <span className="text-[10px] font-black text-slate-400 px-2">切換老師:</span>
+                                        <span className="text-[10px] font-black text-slate-400 px-2">篩選個管:</span>
                                         {['all', '李老師', '傅老師'].map(t => (
                                             <button key={t} onClick={() => setActiveTeacher(t)} className={`px-3 py-1 rounded-lg text-xs font-bold ${activeTeacher === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>{t === 'all' ? '全部' : t}</button>
                                         ))}
@@ -344,7 +349,7 @@
                                 {spedTab === 'schedule' && (
                                     activeTeacher === 'all' ? (
                                         <div className="p-20 text-center bg-white rounded-3xl border border-dashed text-slate-400 font-bold">
-                                            請在上方選擇「李老師」或「傅老師」以管理其專屬開會日期。
+                                            請在上方選擇特定老師以管理其排程。
                                         </div>
                                     ) : (
                                         <div className="bg-white p-8 rounded-3xl border shadow-sm">
@@ -393,7 +398,7 @@
                                     <div className="space-y-6">
                                         <div className="bg-white p-6 rounded-3xl border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
                                             <input id="std-name" placeholder="學生姓名" className="border-2 rounded-xl px-4 py-2 font-bold outline-none focus:border-blue-500"/>
-                                            <input id="std-pwd" placeholder="密碼 (手機末四碼)" className="border-2 rounded-xl px-4 py-2 font-bold outline-none focus:border-blue-500"/>
+                                            <input id="std-pwd" placeholder="請輸入密碼" className="border-2 rounded-xl px-4 py-2 font-bold outline-none focus:border-blue-500"/>
                                             <select className="border-2 rounded-xl px-4 py-2 font-bold outline-none focus:border-blue-500" value={createTeacher} onChange={e=>setCreateTeacher(e.target.value)}>
                                                 <option value="李老師">李老師</option>
                                                 <option value="傅老師">傅老師</option>
@@ -435,6 +440,7 @@
                                                     <th className="p-4">家長進度</th>
                                                     <th className="p-4">導師進度</th>
                                                     <th className="p-4 text-center">定案時間</th>
+                                                    <th className="p-4 text-center">形式</th>
                                                     <th className="p-4 text-center no-print">操作</th>
                                                 </tr>
                                             </thead>
@@ -443,12 +449,12 @@
                                                     <tr key={m.id} className="border-b last:border-0 hover:bg-slate-50">
                                                         <td className="p-4 text-[10px] text-slate-400">{m.manager}</td>
                                                         <td className="p-4">{m.studentName}</td>
-                                                        <td className="p-4 progress-col">
+                                                        <td className="p-4">
                                                             <span className={`px-2 py-0.5 rounded-lg text-[10px] ${m.parentLocked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
                                                                 {m.parentLocked ? '已提交' : '未完成'}
                                                             </span>
                                                         </td>
-                                                        <td className="p-4 progress-col">
+                                                        <td className="p-4">
                                                             <span className={`px-2 py-0.5 rounded-lg text-[10px] ${m.teacherUnavailable ? 'bg-rose-100 text-rose-700' : (m.teacherPrefs?.length > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400')}`}>
                                                                 {m.teacherUnavailable ? '不克出席' : (m.teacherPrefs?.length > 0 ? '已填寫' : '未填寫')}
                                                             </span>
@@ -460,8 +466,11 @@
                                                                 </span>
                                                             ) : <span className="text-slate-200 italic">未定案</span>}
                                                         </td>
+                                                        <td className="p-4 text-center">
+                                                            {m.confirmedTime?.mode === 'online' ? '線上' : '實體'}
+                                                        </td>
                                                         <td className="p-4 text-center no-print">
-                                                            <button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 hover:underline">處理</button>
+                                                            <button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 hover:underline">編輯</button>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -501,7 +510,7 @@
                                                                     <td key={`${date}-${slot}`} className="p-2 border-r align-top">
                                                                         {scheduled.map(s => (
                                                                             <div key={s.id} onClick={() => { setRole('sped'); setSelectedStudentId(s.id); }} className={`p-2 rounded-xl mb-1 text-[10px] font-black text-white cursor-pointer shadow-sm ${s.manager === '傅老師' ? 'bg-[#6366f1]' : 'bg-[#10b981]'}`}>
-                                                                                {s.studentName} {s.meetingModes?.includes('online') ? '💻' : '🏢'}
+                                                                                {s.studentName} {s.confirmedTime?.mode === 'online' ? '💻' : '🏢'}
                                                                             </div>
                                                                         ))}
                                                                     </td>
@@ -534,8 +543,8 @@
                                 <div className="max-w-sm mx-auto py-20 animate-fade-in text-center">
                                     <div className="bg-white p-8 rounded-[40px] shadow-xl border">
                                         <Icon name="key-round" className="w-12 h-12 text-amber-600 mx-auto mb-6" />
-                                        <h2 className="text-sm font-black mb-6 uppercase tracking-widest">請輸入驗證密碼</h2>
-                                        <input type={showStudentPwd ? "text" : "password"} placeholder="手機末四碼" className="w-full border-2 rounded-xl px-4 py-3 text-center mb-2 text-xl font-bold tracking-widest focus:border-amber-500 outline-none" value={studentPasswordInput} onChange={e=>setStudentPasswordInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleStudentVerify()}/>
+                                        <h2 className="text-sm font-black mb-6 uppercase tracking-widest">請輸入密碼</h2>
+                                        <input type={showStudentPwd ? "text" : "password"} placeholder="請輸入密碼" className="w-full border-2 rounded-xl px-4 py-3 text-center mb-2 text-xl font-bold tracking-widest focus:border-amber-500 outline-none" value={studentPasswordInput} onChange={e=>setStudentPasswordInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleStudentVerify()}/>
                                         {studentPwdError && <p className="text-red-500 text-[10px] font-bold mb-4">{studentPwdError}</p>}
                                         <div className="flex gap-3">
                                             <button onClick={resetToHome} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-slate-500 text-xs">返回</button>
@@ -547,7 +556,7 @@
                                 <div className="space-y-8 animate-fade-in no-print">
                                     <header className="bg-white p-8 rounded-[40px] border shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                                         <div className="flex items-center gap-4">
-                                            <button onClick={()=>{setSelectedStudentId(null); setIsStudentAuthorized(false);}} className="p-3 hover:bg-slate-100 rounded-full border transition-all"><Icon name="arrow-left" /></button>
+                                            <button onClick={()=>{setSelectedStudentId(null); setIsStudentAuthorized(false);}} className="p-3 hover:bg-slate-100 rounded-full border transition-all shadow-sm"><Icon name="arrow-left" /></button>
                                             <div>
                                                 <h2 className="text-4xl font-black">{currentMeeting.studentName}</h2>
                                                 <p className="text-slate-400 font-bold text-sm">負責老師：{currentMeeting.manager}</p>
@@ -555,7 +564,7 @@
                                         </div>
                                         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
                                             <div className="bg-slate-50 p-4 rounded-3xl border shadow-inner flex items-center gap-6">
-                                                <span className="text-xs font-black text-slate-400 uppercase">會議形式</span>
+                                                <span className="text-xs font-black text-slate-400 uppercase">形式偏好</span>
                                                 <div className="flex gap-6 font-bold">
                                                     <label className="flex items-center gap-2 cursor-pointer">
                                                         <input type="checkbox" className="w-5 h-5 accent-emerald-500" 
@@ -579,11 +588,22 @@
                                                     </label>
                                                 </div>
                                             </div>
-                                            {role === 'sped' && currentMeeting.meetingModes?.includes('online') && (
+                                            {role === 'sped' && (
                                                 <input placeholder="貼上會議連結" className="bg-blue-50 border-2 border-blue-100 rounded-2xl px-4 py-2 font-bold outline-none text-blue-800" value={currentMeeting.meetingLink || ''} onChange={e=>updateMeetingField(currentMeeting.id, 'meetingLink', e.target.value)}/>
                                             )}
                                         </div>
                                     </header>
+
+                                    {/* 線上連結同步顯示 */}
+                                    {((currentMeeting.meetingModes?.includes('online')) || currentMeeting.confirmedTime?.mode === 'online') && currentMeeting.meetingLink && (
+                                        <div className="bg-blue-600 p-4 rounded-3xl flex items-center justify-between text-white shadow-lg animate-fade-in">
+                                            <div className="flex items-center gap-3">
+                                                <Icon name="video" className="w-6 h-6" />
+                                                <span className="font-bold">線上會議連結已產生</span>
+                                            </div>
+                                            <a href={currentMeeting.meetingLink.startsWith('http') ? currentMeeting.meetingLink : `https://${currentMeeting.meetingLink}`} target="_blank" className="bg-white text-blue-600 px-6 py-2 rounded-xl font-bold hover:bg-blue-50 transition-all">進入會議</a>
+                                        </div>
+                                    )}
 
                                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                                         <div className="lg:col-span-3 space-y-8">
@@ -593,7 +613,7 @@
                                                         <input type="checkbox" className="w-8 h-8 accent-rose-600" checked={currentMeeting.teacherUnavailable || false} onChange={e=>updateMeetingField(currentMeeting.id,'teacherUnavailable',e.target.checked)}/>
                                                         <div>
                                                             <span className="text-xl font-black">目前時段課務繁忙，不克參與會議。</span>
-                                                            <p className="text-xs font-bold opacity-60">勾選後將主動同步個管老師。</p>
+                                                            <p className="text-xs font-bold opacity-60">勾選後將主動同步個管老師知悉。</p>
                                                         </div>
                                                     </label>
                                                 </div>
@@ -601,7 +621,7 @@
                                             
                                             <section className="bg-white p-6 md:p-10 rounded-[40px] border shadow-sm">
                                                 <div className="flex justify-between items-center mb-8">
-                                                    <h3 className="font-black text-2xl flex items-center gap-2 text-blue-600 uppercase tracking-widest"><Icon name="calendar"/> 調查矩陣 ({currentMeeting.manager}排程)</h3>
+                                                    <h3 className="font-black text-2xl flex items-center gap-2 text-blue-600 uppercase tracking-widest"><Icon name="calendar"/> 調查矩陣 ({currentMeeting.manager})</h3>
                                                     {role === 'parent' && (
                                                         currentMeeting.parentLocked ? 
                                                         <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',false)} className="px-6 py-2 bg-slate-100 rounded-xl font-bold text-xs">解鎖編輯</button> :
@@ -614,7 +634,7 @@
                                                     currentData={role === 'parent' ? currentMeeting.parentPrefs : currentMeeting.teacherPrefs} 
                                                     disabled={(currentMeeting.teacherUnavailable && role==='teacher') || (currentMeeting.parentLocked && role==='parent') || (currentMeeting.confirmedTime && role !== 'sped')}
                                                     onToggle={(date, slot) => {
-                                                        if(role === 'sped') return updateMeetingField(currentMeeting.id, 'confirmedTime', {date, slot});
+                                                        if(role === 'sped') return updateMeetingField(currentMeeting.id, 'confirmedTime', {date, slot, mode: tempConfirmedMode});
                                                         const field = role === 'parent' ? 'parentPrefs' : 'teacherPrefs';
                                                         let next = [...(currentMeeting[field] || [])];
                                                         const idx = next.findIndex(p => p.date === date && p.slot === slot);
@@ -632,13 +652,13 @@
 
                                             {(role === 'parent' || role === 'sped') && (
                                                 <div className="bg-white p-8 rounded-[40px] border">
-                                                    <h4 className="font-black text-xl mb-4">家長溝通備註</h4>
+                                                    <h4 className="font-black text-xl mb-4 text-slate-700">家長溝通備註</h4>
                                                     <textarea disabled={currentMeeting.parentLocked && role==='parent'} value={currentMeeting.remarks || ''} onChange={e=>updateMeetingField(currentMeeting.id,'remarks',e.target.value)} placeholder="如有希望針對孩子討論的重點..." className="w-full border-2 rounded-3xl p-6 outline-none focus:border-blue-500 font-bold bg-slate-50 min-h-[150px]"/>
                                                 </div>
                                             )}
                                             {(role === 'teacher' || role === 'sped') && (
                                                 <div className="bg-white p-8 rounded-[40px] border">
-                                                    <h4 className="font-black text-xl mb-4">導師溝通備註</h4>
+                                                    <h4 className="font-black text-xl mb-4 text-slate-700">導師溝通備註</h4>
                                                     <textarea value={currentMeeting.teacherRemarks || ''} onChange={e=>updateMeetingField(currentMeeting.id,'teacherRemarks',e.target.value)} placeholder="如需特殊課務協調或回饋事項..." className="w-full border-2 rounded-3xl p-6 outline-none focus:border-blue-500 font-bold bg-slate-50 min-h-[150px]"/>
                                                 </div>
                                             )}
@@ -653,36 +673,36 @@
                                                             <Icon name="check-circle" className="w-10 h-10 mx-auto mb-4" />
                                                             <div className="text-2xl font-black">{formatDateLabel(currentMeeting.confirmedTime.date)}</div>
                                                             <div className="text-sm font-bold opacity-80">{currentMeeting.confirmedTime.slot}</div>
+                                                            <div className="mt-2 inline-block px-3 py-1 bg-white/20 rounded-full text-[10px] font-black uppercase">
+                                                                最終形式：{currentMeeting.confirmedTime.mode === 'physical' ? '實體' : '線上'}
+                                                            </div>
                                                         </div>
                                                         {role === 'sped' && <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', null)} className="w-full bg-white/10 py-3 rounded-2xl font-bold text-xs hover:bg-white/20">取消定案</button>}
                                                     </div>
                                                 ) : (
                                                     <div className="space-y-6">
+                                                        {role === 'sped' && (
+                                                            <div className="bg-white/5 p-4 rounded-2xl border border-white/10 mb-4">
+                                                                <p className="text-[10px] text-white/40 mb-3 uppercase tracking-widest font-bold">先選擇最終會議形式</p>
+                                                                <div className="flex gap-4">
+                                                                    <button onClick={()=>setTempConfirmedMode('physical')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${tempConfirmedMode==='physical'?'bg-white text-black':'bg-white/10 text-white/50'}`}>實體</button>
+                                                                    <button onClick={()=>setTempConfirmedMode('online')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${tempConfirmedMode==='online'?'bg-white text-black':'bg-white/10 text-white/50'}`}>線上</button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         {calculateFinalTime(currentMeeting) ? (
                                                             <div className="p-6 bg-blue-600/30 border-2 border-blue-500/50 rounded-3xl text-center">
-                                                                <p className="text-[10px] font-bold text-blue-400 mb-2 uppercase tracking-widest">系統媒合建議</p>
+                                                                <p className="text-[10px] font-bold text-blue-400 mb-2 uppercase tracking-widest">媒合建議</p>
                                                                 <div className="text-xl font-black">{formatDateLabel(calculateFinalTime(currentMeeting).date)}</div>
                                                                 <div className="text-sm font-bold opacity-70">{calculateFinalTime(currentMeeting).slot}</div>
                                                                 {role === 'sped' && (
-                                                                    <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', calculateFinalTime(currentMeeting))} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mt-4 shadow-lg">採用此時段</button>
+                                                                    <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', { ...calculateFinalTime(currentMeeting), mode: tempConfirmedMode })} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mt-4 shadow-lg">確認定案</button>
                                                                 )}
                                                             </div>
-                                                        ) : <div className="text-center py-10 opacity-20"><p className="font-bold text-xs uppercase tracking-widest">收集中...</p></div>}
+                                                        ) : <div className="text-center py-10 opacity-20"><p className="font-bold text-xs uppercase tracking-widest">等待資料...</p></div>}
                                                     </div>
                                                 )}
-                                            </div>
-                                            <div className="bg-white p-6 rounded-[30px] border shadow-sm">
-                                                <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">個案狀態追蹤</h4>
-                                                <div className="space-y-4 font-bold text-sm">
-                                                    <div className="flex justify-between items-center">
-                                                        <span>家長意願</span>
-                                                        <span className={currentMeeting.parentLocked ? "text-emerald-500" : "text-slate-300"}>{currentMeeting.parentLocked ? "已提交" : "填寫中"}</span>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span>導師回報</span>
-                                                        <span className={currentMeeting.teacherPrefs?.length > 0 || currentMeeting.teacherUnavailable ? "text-emerald-500" : "text-slate-300"}>{currentMeeting.teacherUnavailable ? "不克出席" : (currentMeeting.teacherPrefs?.length > 0 ? "已同步" : "未填寫")}</span>
-                                                    </div>
-                                                </div>
                                             </div>
                                         </aside>
                                     </div>
