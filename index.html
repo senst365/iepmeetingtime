@@ -61,6 +61,7 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
 
+        // Firebase 配置
         const firebaseConfig = {
             apiKey: "AIzaSyBirOQwZgEs-G1F8diLxjqv9Q-RQu72ZJ4",
             authDomain: "iep-meeting-time.firebaseapp.com",
@@ -82,6 +83,7 @@
             "15:10 - 15:50", "16:10 - 16:50"
         ];
 
+        // 核心防禦：完整預設結構，新增 meetingLink 與基礎資料變動
         const DEFAULT_MEETING_DATA = {
             studentName: '',
             accessPassword: '',
@@ -114,6 +116,7 @@
             const [loading, setLoading] = useState(true);
             const [selectedStudentId, setSelectedStudentId] = useState(null);
             
+            // 編輯基本資料狀態
             const [editingInfoId, setEditingInfoId] = useState(null);
             const [editName, setEditName] = useState('');
             const [editPwd, setEditPwd] = useState('');
@@ -143,27 +146,27 @@
             const teacherRemarksTimer = useRef(null);
             const confirmedRemarkTimer = useRef(null);
 
+            // 1. 初始化驗證
             useEffect(() => {
                 const initAuth = async () => {
                     try {
                         await signInAnonymously(auth);
                     } catch (err) { 
                         console.error("驗證系統初始化失敗:", err); 
+                    } finally {
+                        setLoading(false);
                     }
                 };
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, (u) => {
-                    setUser(u);
-                    setLoading(false);
-                });
+                const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
 
+            // 2. 監聽 Firestore 資料
             useEffect(() => {
                 if (!user) return;
                 const unsubscribeMeetings = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), (snapshot) => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setMeetings(data);
+                    setMeetings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 });
                 const teachers = ["李老師", "傅老師"];
                 const unsubscribes = teachers.map(tName => {
@@ -201,6 +204,7 @@
                 return safeMeetings.filter(m => m?.manager === activeTeacher);
             }, [meetings, activeTeacher]);
 
+            // 強力防禦與合併預設值
             const currentMeeting = useMemo(() => {
                 if (!selectedStudentId || !Array.isArray(meetings)) return null;
                 const found = meetings.find(m => m.id === selectedStudentId);
@@ -270,7 +274,7 @@
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.setAttribute("href", url);
-                link.setAttribute("download", `IEP排程總表_${new Date().toLocaleDateString().replace(/\//g,'-')}.csv`);
+                link.setAttribute("download", `IEP排程總表_${new Date().toISOString().split('T')[0]}.csv`);
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -342,23 +346,7 @@
                 setShowAdminPwd(false); setShowStudentPwd(false);
             };
 
-            const createStudent = async (name, accessPwd) => {
-                if (!name.trim() || !accessPwd.trim() || !user) return;
-                const newCase = {
-                    ...DEFAULT_MEETING_DATA,
-                    studentName: name,
-                    accessPassword: accessPwd,
-                    manager: activeTeacher === 'all' ? createTeacher : activeTeacher,
-                    createdAt: new Date().toISOString(),
-                    parentPrefs: [],
-                    teacherPrefs: [],
-                    meetingModes: ['physical']
-                };
-                try {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), newCase);
-                } catch (e) { console.error("個案建立失敗", e); }
-            };
-
+            // 個案基本資料修改
             const saveStudentEdit = async (id) => {
                 if (!editName.trim() || !editPwd.trim() || !user) return;
                 try {
@@ -366,15 +354,27 @@
                         studentName: editName, accessPassword: editPwd, manager: editManager
                     });
                     setEditingInfoId(null);
-                } catch (e) { console.error("儲存失敗", e); }
+                } catch (e) { console.error("資料更新失敗", e); }
+            };
+
+            const createStudent = async (name, accessPwd) => {
+                if (!name.trim() || !accessPwd.trim() || !user) return;
+                const newCase = {
+                    ...DEFAULT_MEETING_DATA,
+                    studentName: name,
+                    accessPassword: accessPwd,
+                    manager: activeTeacher === 'all' ? createTeacher : activeTeacher,
+                    createdAt: new Date().toISOString()
+                };
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), newCase);
+                } catch (e) { console.error("建立失敗", e); }
             };
 
             const deleteStudent = async (id) => {
                 if(!user) return;
                 if (window.confirm("確定要永久刪除此個案資料嗎？")) {
-                    try {
-                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id));
-                    } catch (e) { console.error("刪除失敗", e); }
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id));
                 }
             };
 
@@ -419,42 +419,25 @@
                                             const isTeacherAvail = Array.isArray(config.slots) && config.slots.some(s => s?.date === date && s?.slot === slot);
                                             const isSelected = mode === 'global' ? isTeacherAvail : safeCurrentData.some(d => d?.date === date && d?.slot === slot);
                                             const isConfirmed = currentMeeting?.confirmedTime?.date === date && currentMeeting?.confirmedTime?.slot === slot;
-                                            
-                                            const isOccupiedByOthers = Array.isArray(meetings) && meetings.some(m => 
-                                                m.id !== selectedStudentId && 
-                                                m.manager === teacherName && 
-                                                m?.confirmedTime?.date === date && 
-                                                m?.confirmedTime?.slot === slot
-                                            );
-
+                                            const isOccupiedByOthers = Array.isArray(meetings) && meetings.some(m => m.id !== selectedStudentId && m.manager === teacherName && m?.confirmedTime?.date === date && m?.confirmedTime?.slot === slot);
                                             const hasParentPref = (currentMeeting?.parentPrefs || []).find(p => p?.date === date && p?.slot === slot);
                                             const hasTeacherPref = (currentMeeting?.teacherPrefs || []).some(t => t?.date === date && t?.slot === slot);
 
                                             let cellClass = `p-4 border-r last:border-0 h-20 transition-all relative `;
                                             let bgColor = isSelected ? "bg-blue-600 text-white shadow-md scale-[0.98]" : "bg-white";
                                             if (isConfirmed) bgColor = "bg-emerald-500 text-white ring-4 ring-emerald-100 ring-inset shadow-md";
-                                            
-                                            if (isOccupiedByOthers && !isConfirmed) {
-                                                cellClass += "occupied-cell ";
-                                                bgColor = ""; 
-                                            } else if (mode !== 'global' && !isTeacherAvail) { 
-                                                cellClass += "unavailable-cell "; 
-                                            } else { 
-                                                cellClass += "cursor-pointer "; 
-                                            }
+                                            if (isOccupiedByOthers && !isConfirmed) { cellClass += "occupied-cell "; bgColor = ""; } 
+                                            else if (mode !== 'global' && !isTeacherAvail) { cellClass += "unavailable-cell "; } 
+                                            else { cellClass += "cursor-pointer "; }
 
                                             return (
-                                                <td key={`${date}-${slot}`} 
-                                                    onClick={() => !isOccupiedByOthers && (mode === 'global' || isTeacherAvail) && onToggle(date, slot)} 
-                                                    className={cellClass + bgColor}>
+                                                <td key={`${date}-${slot}`} onClick={() => !isOccupiedByOthers && (mode === 'global' || isTeacherAvail) && onToggle(date, slot)} className={cellClass + bgColor}>
                                                     {isSelected && !isOccupiedByOthers && <Icon name="check-circle" className="w-7 h-7 mx-auto animate-in zoom-in" />}
-                                                    {isOccupiedByOthers && !isConfirmed && (
-                                                        <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded font-black">他案已定</div>
-                                                    )}
+                                                    {isOccupiedByOthers && !isConfirmed && <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded font-black">他案已定</div>}
                                                     {role === 'sped' && !isSelected && !isOccupiedByOthers && (
                                                         <div className="flex flex-col items-center gap-1 opacity-80">
-                                                            {hasParentPref && <span className="bg-yellow-200 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black">家長 {hasParentPref.priority}</span>}
-                                                            {hasTeacherPref && <span className="bg-green-200 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black">導師</span>}
+                                                            {hasParentPref && <span className="bg-yellow-200 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black">家 {hasParentPref.priority}</span>}
+                                                            {hasTeacherPref && <span className="bg-green-200 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black">導</span>}
                                                         </div>
                                                     )}
                                                 </td>
@@ -492,7 +475,7 @@
                     <main className="max-w-6xl mx-auto p-4 md:p-8">
                         {role === 'home' && (
                             <div className="text-center py-20 animate-fade-in">
-                                <h1 className="text-4xl md:text-5xl font-black mb-6 uppercase">IEP 會議時間協調系統</h1>
+                                <h1 className="text-4xl md:text-5xl font-black mb-16 uppercase">IEP 會議時間協調系統</h1>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                                     {[ {r:'sped',l:'特師入口',i:'settings',d:'管理日期與個案'}, {r:'parent',l:'家長入口',i:'user',d:'填寫志願與回饋'}, {r:'teacher',l:'導師入口',i:'clipboard-list',d:'安排課務與回饋'} ].map(item => (
                                         <div key={item.r} onClick={() => setRole(item.r)} className="p-10 bg-white rounded-[40px] border shadow-sm hover:shadow-xl cursor-pointer group hover:border-blue-500 transition-all border-b-[10px] border-b-transparent hover:border-b-blue-600 shadow-md">
@@ -506,8 +489,8 @@
                         )}
 
                         {role === 'sped' && !isAuth && (
-                            <div className="max-w-sm mx-auto py-20 text-center animate-fade-in">
-                                <div className="bg-white p-8 rounded-[40px] shadow-xl border relative">
+                            <div className="max-w-sm mx-auto py-20 text-center animate-fade-in font-black">
+                                <div className="bg-white p-8 rounded-[40px] shadow-xl border relative overflow-hidden">
                                     <div className="bg-blue-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md"><Icon name="lock" /></div>
                                     <h2 className="text-xl font-black mb-6 uppercase">特師管理驗證</h2>
                                     <div className="relative mb-4">
@@ -527,15 +510,15 @@
                                             <Icon name={showAdminPwd ? "eye-off" : "eye"} className="w-5 h-5" />
                                         </button>
                                     </div>
-                                    {adminPwdError && <p className="text-red-500 text-xs mb-4 font-bold">{adminPwdError}</p>}
-                                    <button onClick={handleAdminLogin} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md active:scale-95 transition-all">進入系統</button>
+                                    {adminPwdError && <p className="text-red-500 text-xs mb-4">{adminPwdError}</p>}
+                                    <button onClick={handleAdminLogin} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md">進入系統</button>
                                 </div>
                             </div>
                         )}
 
                         {role === 'sped' && isAuth && !selectedStudentId && (
-                            <div className="space-y-8 animate-fade-in">
-                                <div className="flex flex-wrap gap-2 bg-white p-3 rounded-3xl border shadow-sm no-print">
+                            <div className="space-y-8 animate-fade-in no-print">
+                                <div className="flex flex-wrap gap-2 bg-white p-3 rounded-3xl border shadow-sm">
                                     {['students', 'schedule', 'report', 'calendar'].map(tab => (
                                         <button key={tab} onClick={() => setSpedTab(tab)} className={`px-5 py-2 rounded-xl font-bold text-xs transition-all ${spedTab===tab?'bg-blue-600 text-white shadow-sm':'text-blue-600 hover:bg-slate-50'}`}>
                                             {tab==='students'?'個案管理':tab==='schedule'?'管理日期':tab==='report'?'進度總覽':'排程總表'}
@@ -550,28 +533,42 @@
 
                                 {spedTab === 'students' && (
                                     <div className="space-y-6">
-                                        <div className="bg-white p-6 rounded-3xl border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
-                                            <input id="std-name" placeholder="學生姓名" className="border-2 rounded-xl px-4 py-2 font-bold shadow-inner outline-none focus:border-blue-500"/>
-                                            <input id="std-pwd" placeholder="調查密碼" className="border-2 rounded-xl px-4 py-2 font-bold shadow-inner outline-none focus:border-blue-500"/>
+                                        <div className="bg-white p-6 rounded-3xl border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
+                                            <input id="std-name" placeholder="學生姓名" className="border-2 rounded-xl px-4 py-2 font-bold shadow-inner focus:border-blue-500 outline-none"/>
+                                            <input id="std-pwd" placeholder="調查密碼" className="border-2 rounded-xl px-4 py-2 font-bold shadow-inner focus:border-blue-500 outline-none"/>
                                             <select className="border-2 rounded-xl px-4 py-2 font-bold" value={createTeacher} onChange={e=>setCreateTeacher(e.target.value)}>
                                                 <option value="李老師">李老師</option>
                                                 <option value="傅老師">傅老師</option>
                                             </select>
-                                            <button onClick={() => { const n = document.getElementById('std-name'); const p = document.getElementById('std-pwd'); createStudent(n.value, p.value); n.value=''; p.value=''; }} className="bg-blue-600 text-white rounded-xl font-bold active:scale-95 transition-all shadow-md">建立個案</button>
+                                            <button onClick={() => { const n = document.getElementById('std-name'); const p = document.getElementById('std-pwd'); createStudent(n.value, p.value); n.value=''; p.value=''; }} className="bg-blue-600 text-white rounded-xl font-bold">建立個案</button>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                             {filteredMeetings.map(m => ( 
                                                 <div key={m.id} className={`p-6 rounded-[35px] border-2 transition-all relative shadow-sm ${m.confirmedTime ? 'bg-emerald-50 border-emerald-500' : 'bg-white'}`}>
                                                     <div className="flex justify-between items-center mb-4">
-                                                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black text-xl">{m?.studentName?.[0]}</div>
-                                                        <div className="flex gap-1 no-print">
-                                                            <button onClick={() => deleteStudent(m.id)} className="p-2 text-slate-300 hover:text-red-500"><Icon name="trash-2" /></button>
-                                                            <button onClick={() => setSelectedStudentId(m.id)} className="p-2 text-blue-600"><Icon name="edit-3" /></button>
+                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xl shadow-inner bg-slate-100`}>{m.studentName?.[0]}</div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => { setEditingInfoId(m.id); setEditName(m.studentName); setEditPwd(m.accessPassword); setEditManager(m.manager); }} className="p-2 text-slate-300 hover:text-blue-600 transition-all font-black"><Icon name="edit-3" /></button>
+                                                            <button onClick={() => deleteStudent(m.id)} className="p-2 text-slate-300 hover:text-red-500 transition-all font-black"><Icon name="trash-2" /></button>
                                                         </div>
                                                     </div>
-                                                    <h3 className="text-xl font-black mb-1">{m?.studentName || "未命名"}</h3>
-                                                    <p className="text-xs opacity-50 mb-3 tracking-widest uppercase">個管：{m?.manager}</p>
-                                                    <div className="text-xs bg-slate-50 p-2 rounded-lg font-bold border opacity-60">密碼：{m?.accessPassword}</div>
+                                                    {editingInfoId === m.id ? (
+                                                        <div className="space-y-3 bg-slate-50 p-4 rounded-2xl animate-fade-in border-2 border-blue-100">
+                                                            <input className="w-full border-b-2 border-blue-500 bg-transparent outline-none py-1 font-bold" value={editName} onChange={e=>setEditName(e.target.value)} />
+                                                            <input className="w-full border-b-2 border-blue-500 bg-transparent outline-none py-1 font-bold" value={editPwd} onChange={e=>setEditPwd(e.target.value)} />
+                                                            <select className="w-full border-b-2 border-blue-500 bg-transparent outline-none py-1 font-bold" value={editManager} onChange={e=>setEditManager(e.target.value)}><option value="李老師">李老師</option><option value="傅老師">傅老師</option></select>
+                                                            <div className="flex gap-2 pt-2"><button onClick={() => setEditingInfoId(null)} className="flex-1 text-xs opacity-50 font-bold py-1.5 hover:bg-slate-200 rounded-lg">取消</button><button onClick={() => saveStudentEdit(m.id)} className="flex-1 text-xs bg-blue-600 text-white font-bold py-1.5 rounded-lg shadow-sm">儲存</button></div>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <h3 className="text-xl font-black mb-1 flex justify-between items-center text-black">
+                                                                {m.studentName || "未命名學生"}
+                                                                <button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 text-xs font-bold underline">進入調查</button>
+                                                            </h3>
+                                                            <p className="text-xs font-bold opacity-50 mb-4 tracking-wider uppercase">個管：{m.manager}</p>
+                                                            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border text-sm font-bold shadow-inner"><Icon name="key" className="w-4 h-4 opacity-30" /><span>{m.accessPassword}</span></div>
+                                                        </>
+                                                    )}
                                                 </div> 
                                             ))}
                                         </div>
@@ -580,7 +577,7 @@
                                 {spedTab === 'schedule' && (
                                     activeTeacher === 'all' ? <div className="p-20 text-center opacity-30 italic">請在右上角選擇具體教師進行日期排程管理</div> :
                                     <div className="bg-white p-8 rounded-3xl border shadow-sm animate-fade-in">
-                                        <div className="flex justify-between mb-8 items-center">
+                                        <div className="flex justify-between mb-8 items-center font-black">
                                             <h2 className="text-xl font-black text-blue-600 flex items-center gap-2 uppercase tracking-widest"><Icon name="calendar"/> 管理日期排程: {activeTeacher}</h2>
                                             <div className="flex gap-2">
                                                 <input type="date" className="border rounded-xl px-3 py-1 font-bold shadow-inner outline-none" value={dateInput} onChange={e=>setDateInput(e.target.value)}/>
@@ -593,7 +590,8 @@
                                                     {formatDateLabel(d)}
                                                     <button onClick={() => { 
                                                         const newDates = teacherConfigs[activeTeacher].dates.filter(x=>x!==d); 
-                                                        updateTeacherConfig(activeTeacher, { ...teacherConfigs[activeTeacher], dates: newDates }); 
+                                                        const newSlots = teacherConfigs[activeTeacher].slots.filter(x=>x.date!==d); 
+                                                        updateTeacherConfig(activeTeacher, { dates: newDates, slots: newSlots }); 
                                                     }} className="ml-2 opacity-30 hover:opacity-100"><Icon name="x" className="w-3 h-3"/></button>
                                                 </div> 
                                             ))}
@@ -621,7 +619,7 @@
                                                         <td className="p-4 text-center">
                                                             {m.confirmedTime ? <span className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-[10px] shadow-md">{formatDateLabel(m.confirmedTime.date)} {m.confirmedTime.slot}</span> : <span className="opacity-10 italic">未定案</span>}
                                                         </td>
-                                                        <td className="p-4 text-center no-print"><button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 underline text-xs">編輯</button></td>
+                                                        <td className="p-4 text-center no-print"><button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 underline text-xs">詳情</button></td>
                                                     </tr> 
                                                 ))}
                                             </tbody>
@@ -629,16 +627,16 @@
                                     </div>
                                 )}
                                 {spedTab === 'calendar' && (
-                                    <div className="bg-white p-10 rounded-[40px] border shadow-sm overflow-x-auto">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <h2 className="text-2xl font-black uppercase tracking-tighter">IEP 會議排程總表</h2>
+                                    <div className="bg-white p-10 rounded-[40px] border shadow-sm overflow-x-auto print-container">
+                                        <div className="flex justify-between items-center mb-6 no-print">
+                                            <h2 className="text-2xl font-black uppercase tracking-tighter text-black">IEP 會議排程總表</h2>
                                             <button onClick={downloadExcel} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-transform"><Icon name="file-spreadsheet" />下載 Excel</button>
                                         </div>
                                         <table className="w-full border-collapse border">
                                             <thead>
                                                 <tr className="bg-slate-50">
                                                     <th className="p-3 border font-black opacity-40 uppercase text-[10px]">時段</th>
-                                                    {Array.from(new Set([...(teacherConfigs["李老師"]?.dates || []), ...(teacherConfigs["傅老師"]?.dates || [])])).filter(d=>!!d).sort().map(d => ( <th key={d} className="p-3 border">{formatDateLabel(d)}</th> ))}
+                                                    {Array.from(new Set([...(teacherConfigs["李老師"]?.dates || []), ...(teacherConfigs["傅老師"]?.dates || [])])).filter(d=>!!d).sort().map(d => ( <th key={d} className="p-3 border text-black">{formatDateLabel(d)}</th> ))}
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -650,7 +648,7 @@
                                                             return ( 
                                                                 <td key={`${date}-${slot}`} className="p-1 border align-top">
                                                                     {scheduled.map(s => ( 
-                                                                        <div key={s.id} onClick={() => setSelectedStudentId(s.id)} className={`p-1.5 rounded-lg mb-1 text-[9px] font-black text-white cursor-pointer shadow-sm hover:scale-105 transition-transform ${s.manager === '傅老師' ? 'bg-indigo-500' : 'bg-emerald-500'}`}>
+                                                                        <div key={s.id} onClick={() => setSelectedStudentId(s.id)} className={`p-1.5 rounded-lg mb-1 text-[9px] font-black text-white cursor-pointer shadow-sm hover:scale-105 transition-transform ${s.manager === '傅老師' ? 'bg-[#6366f1]' : 'bg-[#10b981]'}`}>
                                                                             {s.studentName} {s.confirmedTimeRemark && <span className="block opacity-70 italic border-t border-white/20 mt-1 pt-1">{s.confirmedTimeRemark}</span>}
                                                                         </div> 
                                                                     ))}
@@ -681,7 +679,7 @@
                         {selectedStudentId && (
                             !currentMeeting ? <div className="p-20 text-center opacity-30 font-black italic animate-pulse">個案資料載入中...</div> :
                             (!isStudentAuthorized && role !== 'sped') ? (
-                                <div className="max-w-sm mx-auto py-20 text-center animate-fade-in">
+                                <div className="max-w-sm mx-auto py-20 text-center animate-fade-in font-black">
                                     <div className="bg-white p-8 rounded-[40px] shadow-xl border relative overflow-hidden">
                                         <div className="bg-blue-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md shadow-blue-100"><Icon name="key" /></div>
                                         <h2 className="text-lg font-black mb-6 uppercase tracking-widest">請輸入會議密碼</h2>
@@ -693,7 +691,7 @@
                                     </div>
                                 </div>
                             ) : (
-                                <div className="space-y-8 animate-fade-in text-black">
+                                <div className="space-y-8 animate-fade-in text-black font-black">
                                     <header className="bg-white p-8 rounded-[40px] border shadow-sm flex flex-col lg:flex-row justify-between items-center gap-6 border-b-[8px] border-b-slate-100">
                                         <div className="flex items-center gap-4">
                                             <button onClick={()=>{setSelectedStudentId(null); setIsStudentAuthorized(false);}} className="p-3 hover:bg-slate-100 rounded-full border shadow-sm active:scale-90 transition-all"><Icon name="arrow-left" className="text-black"/></button>
@@ -702,7 +700,7 @@
                                                 <p className="opacity-50 text-xs font-bold uppercase tracking-widest mt-1">個案管轄教師：{currentMeeting?.manager}</p>
                                             </div>
                                         </div>
-                                        <div className="flex gap-4 no-print">
+                                        <div className="flex flex-col sm:flex-row gap-4 no-print items-center">
                                             <div className="bg-slate-50 px-6 py-3 rounded-3xl border flex gap-6 font-black shadow-inner">
                                                 {['physical', 'online'].map(m => (
                                                     <label key={m} className="flex items-center gap-2 cursor-pointer hover:scale-105 transition-transform">
@@ -710,12 +708,43 @@
                                                             let modes = [...(currentMeeting.meetingModes || [])];
                                                             if(e.target.checked) modes.push(m); else modes = modes.filter(x=>x!==m);
                                                             updateMeetingField(currentMeeting.id, 'meetingModes', modes);
-                                                        }}/> {m==='physical'?'實體會議':'線上會議'}
+                                                        }}/> {m==='physical'?'實體':'線上'}
                                                     </label>
                                                 ))}
                                             </div>
+                                            {role === 'sped' && (
+                                                <div className="relative group">
+                                                    <input 
+                                                        placeholder="貼上線上會議連結 (選填)" 
+                                                        className="border-2 rounded-2xl px-6 py-3 font-bold shadow-inner focus:border-blue-500 outline-none min-w-[250px] bg-blue-50"
+                                                        value={currentMeeting?.meetingLink || ''}
+                                                        onChange={e => updateMeetingField(currentMeeting.id, 'meetingLink', e.target.value)}
+                                                    />
+                                                    <div className="absolute -top-3 left-4 px-2 bg-white text-[10px] text-blue-600 font-bold border rounded uppercase">Meeting Link</div>
+                                                </div>
+                                            )}
                                         </div>
                                     </header>
+
+                                    {/* 同步顯示線上會議連結 */}
+                                    {((currentMeeting?.meetingModes || []).includes('online') || (currentMeeting?.confirmedTime?.mode === 'online')) && currentMeeting?.meetingLink && (
+                                        <div className="bg-blue-600 p-6 rounded-[30px] flex items-center justify-between text-white shadow-xl animate-fade-in">
+                                            <div className="flex items-center gap-4">
+                                                <div className="bg-white/20 p-3 rounded-2xl"><Icon name="video" className="w-8 h-8" /></div>
+                                                <div>
+                                                    <h4 className="text-xl font-black">線上會議連結已就緒</h4>
+                                                    <p className="text-sm opacity-70">點選按鈕後將立即開啟線上會議室。</p>
+                                                </div>
+                                            </div>
+                                            <a 
+                                                href={currentMeeting.meetingLink.startsWith('http') ? currentMeeting.meetingLink : `https://${currentMeeting.meetingLink}`} 
+                                                target="_blank" 
+                                                className="bg-white text-blue-600 px-8 py-3 rounded-2xl font-black hover:scale-105 transition-all shadow-md active:scale-95"
+                                            >
+                                                進入線上會議
+                                            </a>
+                                        </div>
+                                    )}
 
                                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                                         <div className="lg:col-span-3 space-y-8">
