@@ -61,7 +61,6 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
 
-        // Firebase 配置
         const firebaseConfig = {
             apiKey: "AIzaSyBirOQwZgEs-G1F8diLxjqv9Q-RQu72ZJ4",
             authDomain: "iep-meeting-time.firebaseapp.com",
@@ -83,7 +82,6 @@
             "15:10 - 15:50", "16:10 - 16:50"
         ];
 
-        // 核心防禦：定義完整的預設物件結構，確保任何時候讀取屬性都不會為 null
         const DEFAULT_MEETING_DATA = {
             studentName: '',
             accessPassword: '',
@@ -145,23 +143,22 @@
             const teacherRemarksTimer = useRef(null);
             const confirmedRemarkTimer = useRef(null);
 
-            // 1. 初始化驗證
             useEffect(() => {
                 const initAuth = async () => {
                     try {
                         await signInAnonymously(auth);
                     } catch (err) { 
                         console.error("驗證系統初始化失敗:", err); 
-                    } finally {
-                        setLoading(false);
                     }
                 };
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, setUser);
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    setLoading(false);
+                });
                 return () => unsubscribe();
             }, []);
 
-            // 2. 監聽 Firestore 資料
             useEffect(() => {
                 if (!user) return;
                 const unsubscribeMeetings = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), (snapshot) => {
@@ -204,13 +201,11 @@
                 return safeMeetings.filter(m => m?.manager === activeTeacher);
             }, [meetings, activeTeacher]);
 
-            // 加強防禦：任何欄位只要缺失或為 null，立即補上 DEFAULT_MEETING_DATA 的預設值
             const currentMeeting = useMemo(() => {
                 if (!selectedStudentId || !Array.isArray(meetings)) return null;
                 const found = meetings.find(m => m.id === selectedStudentId);
                 if (!found) return null;
                 
-                // 深度合併與型別檢查
                 return {
                     ...DEFAULT_MEETING_DATA,
                     ...found,
@@ -349,14 +344,12 @@
 
             const createStudent = async (name, accessPwd) => {
                 if (!name.trim() || !accessPwd.trim() || !user) return;
-                // 強制寫入完整預設結構，防止第一次點開時欄位缺失
                 const newCase = {
                     ...DEFAULT_MEETING_DATA,
                     studentName: name,
                     accessPassword: accessPwd,
                     manager: activeTeacher === 'all' ? createTeacher : activeTeacher,
                     createdAt: new Date().toISOString(),
-                    // 確保陣列欄位被明確初始化為空
                     parentPrefs: [],
                     teacherPrefs: [],
                     meetingModes: ['physical']
@@ -500,7 +493,6 @@
                         {role === 'home' && (
                             <div className="text-center py-20 animate-fade-in">
                                 <h1 className="text-4xl md:text-5xl font-black mb-6 uppercase">IEP 會議時間協調系統</h1>
-                                <p className="opacity-70 text-lg mb-16 font-black tracking-widest italic uppercase">Sync Your Time, Scale Your Support.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                                     {[ {r:'sped',l:'特師入口',i:'settings',d:'管理日期與個案'}, {r:'parent',l:'家長入口',i:'user',d:'填寫志願與回饋'}, {r:'teacher',l:'導師入口',i:'clipboard-list',d:'安排課務與回饋'} ].map(item => (
                                         <div key={item.r} onClick={() => setRole(item.r)} className="p-10 bg-white rounded-[40px] border shadow-sm hover:shadow-xl cursor-pointer group hover:border-blue-500 transition-all border-b-[10px] border-b-transparent hover:border-b-blue-600 shadow-md">
@@ -515,12 +507,28 @@
 
                         {role === 'sped' && !isAuth && (
                             <div className="max-w-sm mx-auto py-20 text-center animate-fade-in">
-                                <div className="bg-white p-8 rounded-[40px] shadow-xl border">
+                                <div className="bg-white p-8 rounded-[40px] shadow-xl border relative">
+                                    <div className="bg-blue-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md"><Icon name="lock" /></div>
                                     <h2 className="text-xl font-black mb-6 uppercase">特師管理驗證</h2>
                                     <div className="relative mb-4">
-                                        <input type={showAdminPwd ? "text" : "password"} placeholder="驗證碼" className="w-full border-2 rounded-xl px-4 py-3 text-center font-black shadow-inner focus:border-blue-500 outline-none" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdminLogin()}/>
+                                        <input 
+                                            type={showAdminPwd ? "text" : "password"} 
+                                            placeholder="請輸入驗證碼" 
+                                            className="w-full border-2 rounded-xl px-4 py-3 text-center font-black shadow-inner focus:border-blue-500 outline-none pr-12" 
+                                            value={password} 
+                                            onChange={e=>setPassword(e.target.value)} 
+                                            onKeyDown={e=>e.key==='Enter'&&handleAdminLogin()}
+                                        />
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowAdminPwd(!showAdminPwd)}
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+                                        >
+                                            <Icon name={showAdminPwd ? "eye-off" : "eye"} className="w-5 h-5" />
+                                        </button>
                                     </div>
-                                    <button onClick={handleAdminLogin} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md">進入系統</button>
+                                    {adminPwdError && <p className="text-red-500 text-xs mb-4 font-bold">{adminPwdError}</p>}
+                                    <button onClick={handleAdminLogin} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md active:scale-95 transition-all">進入系統</button>
                                 </div>
                             </div>
                         )}
@@ -573,7 +581,7 @@
                                     activeTeacher === 'all' ? <div className="p-20 text-center opacity-30 italic">請在右上角選擇具體教師進行日期排程管理</div> :
                                     <div className="bg-white p-8 rounded-3xl border shadow-sm animate-fade-in">
                                         <div className="flex justify-between mb-8 items-center">
-                                            <h2 className="text-xl font-black text-blue-600 flex items-center gap-2 uppercase tracking-widest"><Icon name="calendar"/> Manage Schedule: {activeTeacher}</h2>
+                                            <h2 className="text-xl font-black text-blue-600 flex items-center gap-2 uppercase tracking-widest"><Icon name="calendar"/> 管理日期排程: {activeTeacher}</h2>
                                             <div className="flex gap-2">
                                                 <input type="date" className="border rounded-xl px-3 py-1 font-bold shadow-inner outline-none" value={dateInput} onChange={e=>setDateInput(e.target.value)}/>
                                                 <button onClick={() => { const d = teacherConfigs[activeTeacher]?.dates || []; if(!dateInput || d.includes(dateInput)) return; updateTeacherConfig(activeTeacher, { ...teacherConfigs[activeTeacher], dates: [...d, dateInput] }); setDateInput(''); }} className="bg-blue-600 text-white px-4 py-1 rounded-lg font-bold shadow-md">新增日期</button>
