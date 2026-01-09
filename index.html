@@ -332,7 +332,6 @@
             const handleStudentVerify = () => studentPasswordInput === currentMeeting?.accessPassword ? (setIsStudentAuthorized(true), setStudentPwdError('')) : setStudentPwdError('密碼不正確');
 
             const downloadExcel = () => {
-                // 模擬下載功能，實際環境通常建議使用 XLSX.js 或簡單的 CSV Blob
                 window.print();
             };
 
@@ -400,7 +399,7 @@
                     <nav className="bg-white border-b sticky top-0 z-50 px-4 md:px-8 h-20 flex items-center justify-between shadow-sm no-print">
                         <div className="flex items-center gap-4">
                             <button onClick={resetToHome} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all active:scale-90 shadow-sm"><Icon name="home" /></button>
-                            <div><span className="font-black text-xl tracking-tighter uppercase block">IEP 會議時間協調系統</span><span className="text-[10px] font-black opacity-30 tracking-[0.2em] uppercase">Antong Potential Class</span></div>
+                            <div><span className="font-black text-xl tracking-tighter uppercase block">IEP 會議時間協調系統</span></div>
                         </div>
                         <div className="flex bg-slate-100 p-1.5 rounded-2xl border shadow-inner">
                             {['sped', 'parent', 'teacher'].map(r => (
