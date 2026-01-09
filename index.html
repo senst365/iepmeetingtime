@@ -13,7 +13,8 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        window.FirebaseSDK = { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken };
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        window.FirebaseSDK = { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getAnalytics };
     </script>
 
     <style>
@@ -47,21 +48,6 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
-        const { initializeApp, getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, getDoc, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.FirebaseSDK;
-
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            apiKey: "",
-            authDomain: "iep-meeting-time.firebaseapp.com",
-            projectId: "iep-meeting-time",
-            storageBucket: "iep-meeting-time.firebasestorage.app",
-            messagingSenderId: "859481078114",
-            appId: "1:859481078114:web:6e2779f007ecb7a9c7143b"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'iep-meeting-time';
 
         const TIME_SLOTS = [
             "早自修 08:00-08:35", "第1節 08:40-09:20", "第2節 09:30-10:10", "第3節 10:30-11:10",
@@ -82,6 +68,7 @@
         };
 
         const App = () => {
+            const [sdkReady, setSdkReady] = useState(false);
             const [user, setUser] = useState(null);
             const [role, setRole] = useState('home');
             const [meetings, setMeetings] = useState([]);
@@ -109,35 +96,94 @@
             const remarksTimer = useRef(null);
             const teacherRemarksTimer = useRef(null);
             const confirmedRemarkTimer = useRef(null);
+            
+            // Firebase Reference Refs
+            const dbRef = useRef(null);
+            const authRef = useRef(null);
+            const appIdRef = useRef('iep-meeting-time');
 
+            // 1. 等待 SDK 載入並初始化
             useEffect(() => {
+                const checkSDK = setInterval(() => {
+                    if (window.FirebaseSDK) {
+                        const { initializeApp, getFirestore, getAuth, getAnalytics } = window.FirebaseSDK;
+                        
+                        // 填入您提供的 Firebase 配置
+                        let config = {
+                            apiKey: "AIzaSyBirOQwZgEs-G1F8diLxjqv9Q-RQu72ZJ4",
+                            authDomain: "iep-meeting-time.firebaseapp.com",
+                            projectId: "iep-meeting-time",
+                            storageBucket: "iep-meeting-time.firebasestorage.app",
+                            messagingSenderId: "859481078114",
+                            appId: "1:859481078114:web:6e2779f007ecb7a9c7143b",
+                            measurementId: "G-LB9T9HZKF9"
+                        };
+
+                        // 若環境變數中有配置，則覆蓋（通常用於預覽環境）
+                        try {
+                            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                                config = JSON.parse(__firebase_config);
+                            }
+                        } catch(e) {}
+                        
+                        const app = initializeApp(config);
+                        dbRef.current = getFirestore(app);
+                        authRef.current = getAuth(app);
+                        appIdRef.current = typeof __app_id !== 'undefined' ? __app_id : 'iep-meeting-time';
+                        
+                        // 初始化 Analytics (非強制)
+                        if (config.measurementId) {
+                            try { getAnalytics(app); } catch(e) {}
+                        }
+                        
+                        setSdkReady(true);
+                        clearInterval(checkSDK);
+                    }
+                }, 50);
+                return () => clearInterval(checkSDK);
+            }, []);
+
+            // 2. 匿名認證
+            useEffect(() => {
+                if (!sdkReady) return;
+                const { signInAnonymously, signInWithCustomToken, onAuthStateChanged } = window.FirebaseSDK;
+                
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
+                            await signInWithCustomToken(authRef.current, __initial_auth_token);
                         } else {
-                            await signInAnonymously(auth);
+                            await signInAnonymously(authRef.current);
                         }
                     } catch (err) { console.error("Firebase Auth Fail", err); }
                     setLoading(false);
                 };
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, setUser);
-                return () => unsubscribe();
-            }, []);
+                return onAuthStateChanged(authRef.current, setUser);
+            }, [sdkReady]);
 
+            // 3. 監聽 Firestore 數據 (實時更新)
             useEffect(() => {
-                if (!user) return;
-                const unsubMeetings = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), (s) => {
-                    setMeetings(s.docs.map(d => ({ id: d.id, ...d.data() })));
-                }, (err) => console.error("Firestore Error", err));
+                if (!user || !sdkReady) return;
+                const { collection, doc, onSnapshot } = window.FirebaseSDK;
+                
+                // 監聽所有會議個案
+                const unsubMeetings = onSnapshot(
+                    collection(dbRef.current, 'artifacts', appIdRef.current, 'public', 'data', 'iep_meetings'), 
+                    (s) => {
+                        setMeetings(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    },
+                    (err) => console.error("Snapshot error:", err)
+                );
 
+                // 監聽教師日期配置
                 const teachers = ["李老師", "傅老師"];
-                const unsubConfigs = teachers.map(t => onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'config', t), (d) => {
+                const unsubConfigs = teachers.map(t => onSnapshot(doc(dbRef.current, 'artifacts', appIdRef.current, 'public', 'data', 'config', t), (d) => {
                     if (d.exists()) setTeacherConfigs(prev => ({ ...prev, [t]: d.data() }));
                 }));
+                
                 return () => { unsubMeetings(); unsubConfigs.forEach(u => u()); };
-            }, [user]);
+            }, [user, sdkReady]);
 
             const formatDateLabel = (dStr) => {
                 if (!dStr) return "未定";
@@ -149,7 +195,6 @@
             const currentMeeting = useMemo(() => {
                 const found = meetings.find(m => m.id === selectedStudentId);
                 if (!found) return null;
-                // Sync locals
                 setLocalRemarks(found.remarks || '');
                 setLocalTeacherRemarks(found.teacherRemarks || '');
                 setLocalConfirmedRemark(found.confirmedTimeRemark || '');
@@ -180,15 +225,18 @@
             }, [meetings, activeTeacher]);
 
             const updateMeetingField = async (id, field, value) => {
-                if (!id) return;
+                if (!id || !sdkReady) return;
+                const { doc, updateDoc } = window.FirebaseSDK;
                 try { 
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id), { [field]: value }); 
+                    await updateDoc(doc(dbRef.current, 'artifacts', appIdRef.current, 'public', 'data', 'iep_meetings', id), { [field]: value }); 
                 } catch (e) { console.error("Update Error", e); }
             };
 
             const updateTeacherConfig = async (tName, config) => {
+                if (!sdkReady) return;
+                const { doc, setDoc } = window.FirebaseSDK;
                 try { 
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', tName), config); 
+                    await setDoc(doc(dbRef.current, 'artifacts', appIdRef.current, 'public', 'data', 'config', tName), config); 
                 } catch (e) { console.error("Config Error", e); }
             };
 
@@ -247,14 +295,17 @@
             };
 
             const createStudent = async (name, pwd, man) => {
-                if (!name || !pwd) return;
+                if (!name || !pwd || !sdkReady) return;
+                const { collection, addDoc } = window.FirebaseSDK;
                 const data = { ...DEFAULT_MEETING_DATA, studentName: name, accessPassword: pwd, manager: man };
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'iep_meetings'), data);
+                await addDoc(collection(dbRef.current, 'artifacts', appIdRef.current, 'public', 'data', 'iep_meetings'), data);
             };
 
             const deleteStudent = async (id) => {
+                if (!id || !sdkReady) return;
+                const { doc, deleteDoc } = window.FirebaseSDK;
                 if (confirm("確定刪除此個案？")) {
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id));
+                    await deleteDoc(doc(dbRef.current, 'artifacts', appIdRef.current, 'public', 'data', 'iep_meetings', id));
                 }
             };
 
@@ -338,7 +389,12 @@
                 );
             };
 
-            if (loading) return <div className="min-h-screen flex items-center justify-center font-black">載入中...</div>;
+            if (loading || !sdkReady) return (
+                <div className="min-h-screen flex flex-col items-center justify-center font-black bg-slate-50">
+                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <p className="opacity-30 tracking-widest uppercase italic">Initializing System...</p>
+                </div>
+            );
 
             return (
                 <div className="min-h-screen pb-10 flex flex-col">
@@ -367,7 +423,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                <div className="mt-20 opacity-20 font-black text-xl tracking-widest">安東國小潛能班</div>
+                                <div className="mt-20 opacity-20 font-black text-xl tracking-widest uppercase">安東國小潛能班</div>
                             </div>
                         )}
 
