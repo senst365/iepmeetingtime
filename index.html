@@ -32,8 +32,8 @@
         
         /* 非開放時段斜線底 */
         .bg-slash {
-            background-color: #e2e8f0;
-            background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(203, 213, 225, 0.4) 5px, rgba(203, 213, 225, 0.4) 10px);
+            background-color: #f1f5f9;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(203, 213, 225, 0.3) 5px, rgba(203, 213, 225, 0.3) 10px);
         }
 
         /* 側邊欄固定容器 */
@@ -218,7 +218,6 @@
             const currentMeeting = useMemo(() => meetings.find(m => m.id === selectedStudentId), [meetings, selectedStudentId]);
             const filteredMeetings = useMemo(() => activeTeacher === 'all' ? meetings : meetings.filter(m => m.manager === activeTeacher), [meetings, activeTeacher]);
 
-            // 取得當前有效的視訊連結：優先使用個案獨立連結，若無則使用「管理該個案老師」的預設連結
             const activeMeetingLink = useMemo(() => {
                 if (!currentMeeting) return '';
                 const teacherLink = teacherConfigs[currentMeeting.manager]?.defaultMeetingLink || '';
@@ -279,6 +278,12 @@
 
             const handleTogglePreference = (date, slot) => {
                 if (!currentMeeting || !selectedStudentId) return;
+                
+                // 若此時段在老師的 config 中不開放，除了 sped 管理模式外其餘禁止點擊
+                const config = teacherConfigs[currentMeeting.manager] || { slots: [] };
+                const isAvail = config.slots?.some(s => s.date === date && s.slot === slot);
+                if (!isAvail && role !== 'sped') return;
+
                 const isOccupied = meetings.some(m => m.id !== selectedStudentId && m.manager === currentMeeting.manager && m.confirmedTime?.date === date && m.confirmedTime?.slot === slot);
                 if (isOccupied) return;
 
@@ -374,7 +379,7 @@
             const handleAdminLogin = () => password === 'tset' ? (setIsAuth(true), setAdminPwdError('')) : setAdminPwdError('驗證碼錯誤');
             const handleStudentVerify = () => studentPasswordInput === currentMeeting?.accessPassword ? (setIsStudentAuthorized(true), setStudentPwdError('')) : setStudentPwdError('密碼不正確');
 
-            const Matrix = ({ teacherName, onToggle, disabled = false }) => {
+            const Matrix = ({ teacherName, onToggle, disabled = false, mode = 'case' }) => {
                 const config = teacherConfigs[teacherName] || { dates: [], slots: [] };
                 if (!config.dates?.length) return <div className="p-10 text-center text-slate-400 border-2 border-dashed rounded-3xl font-black">尚未設定開放日期</div>;
                 const sortedDates = [...config.dates].sort();
@@ -399,27 +404,41 @@
                                         const tPref = currentMeeting?.teacherPrefs?.find(t => t.date === date && t.slot === slot.time);
 
                                         let bgColor = "bg-white";
-                                        if (isConfirmed || isPending) {
-                                            bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100"; 
-                                        } else if (pPref && tPref) {
-                                            bgColor = "bg-orange-500 text-white"; 
-                                        } else if (tPref) {
-                                            bgColor = "bg-blue-500 text-white"; 
-                                        } else if (pPref) {
-                                            bgColor = "bg-green-500 text-white"; 
-                                        } else if (isOccupied) {
-                                            bgColor = "bg-slate-100 cursor-not-allowed opacity-50";
-                                        } else if (!isAvail) {
-                                            bgColor = "bg-slash";
+                                        let showCheck = false;
+
+                                        if (mode === 'global') {
+                                            // 特師排程管理模式：黃色勾選
+                                            if (isAvail) {
+                                                bgColor = "bg-yellow-400 shadow-inner";
+                                                showCheck = true;
+                                            } else {
+                                                bgColor = "bg-white hover:bg-yellow-50";
+                                            }
+                                        } else {
+                                            // 一般個案填報模式
+                                            if (isConfirmed || isPending) {
+                                                bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100"; 
+                                            } else if (pPref && tPref) {
+                                                bgColor = "bg-orange-500 text-white"; 
+                                            } else if (tPref) {
+                                                bgColor = "bg-blue-500 text-white"; 
+                                            } else if (pPref) {
+                                                bgColor = "bg-green-500 text-white"; 
+                                            } else if (isOccupied) {
+                                                bgColor = "bg-slate-100 cursor-not-allowed opacity-50";
+                                            } else if (!isAvail) {
+                                                // 未開放時段：灰色斜線底
+                                                bgColor = "bg-slash";
+                                            }
                                         }
 
                                         return (
                                             <td key={`${date}-${slot.time}`} 
-                                                onClick={() => isAvail && onToggle(date, slot.time)} 
-                                                className={`p-4 border-r border-slate-200 last:border-0 h-24 transition-all relative ${isAvail ? 'cursor-pointer hover:opacity-80' : ''} ${bgColor}`}>
-                                                {(isConfirmed || isPending) && <Icon name="check-circle" className="w-8 h-8 mx-auto" />}
-                                                {isOccupied && !isConfirmed && <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded font-black">他案定案</div>}
-                                                {pPref && !isConfirmed && !isPending && (
+                                                onClick={() => (mode === 'global' || isAvail) && onToggle(date, slot.time)} 
+                                                className={`p-4 border-r border-slate-200 last:border-0 h-24 transition-all relative ${(mode === 'global' || isAvail) ? 'cursor-pointer hover:opacity-80' : 'cursor-not-allowed'} ${bgColor}`}>
+                                                {(isConfirmed || isPending || (mode === 'global' && showCheck)) && <Icon name="check-circle" className={`w-8 h-8 mx-auto ${mode === 'global' ? 'text-yellow-800' : ''}`} />}
+                                                {isOccupied && !isConfirmed && mode !== 'global' && <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded font-black">他案定案</div>}
+                                                {pPref && !isConfirmed && !isPending && mode !== 'global' && (
                                                     <div className="absolute top-1 right-1">
                                                         <span className="bg-white/30 text-[9px] px-1 rounded font-black">家{pPref.priority}</span>
                                                     </div>
@@ -582,11 +601,17 @@
                                                             </div> 
                                                         ))}
                                                     </div>
+                                                    
+                                                    {/* 此處 mode 為 global，特師在此可以勾選/取消開放時段 */}
                                                     <Matrix mode="global" teacherName={activeTeacher} onToggle={(date, slot) => {
                                                         const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
                                                         const s = [...(teacherConfigs[activeTeacher]?.slots || [])];
                                                         const idx = s.findIndex(x => x.date === date && x.slot === slot);
-                                                        idx > -1 ? s.splice(idx, 1) : s.push({ date, slot });
+                                                        if (idx > -1) {
+                                                            s.splice(idx, 1);
+                                                        } else {
+                                                            s.push({ date, slot });
+                                                        }
                                                         setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], slots: s }, { merge: true });
                                                     }} />
                                                 </div>
@@ -776,7 +801,7 @@
                                                     </div>
                                                     {role === 'parent' && ( (currentMeeting.parentLocked || currentMeeting.parentUnavailable) ? <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',false)} className="px-8 py-3 bg-slate-100 rounded-2xl font-black text-xs text-slate-500 shadow-sm font-black font-black">解鎖修改</button> : <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',true)} className="px-10 py-3 bg-emerald-500 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all text-xs uppercase font-black font-black">確認提交並鎖定</button> )}
                                                 </div>
-                                                <Matrix teacherName={currentMeeting?.manager || '李老師'} currentData={role === 'parent' ? (currentMeeting.parentPrefs || []) : (currentMeeting.teacherPrefs || [])} disabled={(currentMeeting.teacherUnavailable && role==='teacher') || (currentMeeting.parentUnavailable && role==='parent') || (currentMeeting.parentLocked && role==='parent') || (currentMeeting.confirmedTime && role !== 'sped')} onToggle={handleTogglePreference} />
+                                                <Matrix mode="case" teacherName={currentMeeting?.manager || '李老師'} currentData={role === 'parent' ? (currentMeeting.parentPrefs || []) : (currentMeeting.teacherPrefs || [])} disabled={(currentMeeting.teacherUnavailable && role==='teacher') || (currentMeeting.parentUnavailable && role==='parent') || (currentMeeting.parentLocked && role==='parent') || (currentMeeting.confirmedTime && role !== 'sped')} onToggle={handleTogglePreference} />
                                             </section>
                                             <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm space-y-10 border-b-[20px] border-b-slate-50 font-black font-black">
                                                 {(role==='parent' || role==='sped') && <div className="space-y-4 font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black font-black">家長溝通與討論需求</h4><textarea disabled={(currentMeeting.parentLocked || currentMeeting.parentUnavailable) && role==='parent'} value={localRemarks} onChange={e=>handleRemarksChange(e.target.value)} placeholder="針對孩子近期表現、需求或希望討論的重點..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black font-black"/></div>}
