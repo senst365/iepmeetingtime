@@ -135,10 +135,9 @@
             const [role, setRole] = useState('home');
             const [meetings, setMeetings] = useState([]);
             const [teacherConfigs, setTeacherConfigs] = useState({
-                "李老師": { dates: [], slots: [] },
-                "傅老師": { dates: [], slots: [] }
+                "李老師": { dates: [], slots: [], defaultMeetingLink: '' },
+                "傅老師": { dates: [], slots: [], defaultMeetingLink: '' }
             });
-            const [globalConfig, setGlobalConfig] = useState({ defaultMeetingLink: '' });
             const [loading, setLoading] = useState(true);
             const [selectedStudentId, setSelectedStudentId] = useState(null);
             const [pendingSlot, setPendingSlot] = useState(null);
@@ -208,14 +207,9 @@
                             if (s.exists()) setTeacherConfigs(p => ({ ...p, [t]: s.data() }));
                         }));
 
-                        const unsubGlobal = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'global_settings'), (s) => {
-                            if (s.exists()) setGlobalConfig(s.data());
-                        });
-
                         return () => { 
                             unsubMeetings(); 
                             configUnsubs.forEach(un => un()); 
-                            unsubGlobal();
                         };
                     }
                 });
@@ -224,10 +218,12 @@
             const currentMeeting = useMemo(() => meetings.find(m => m.id === selectedStudentId), [meetings, selectedStudentId]);
             const filteredMeetings = useMemo(() => activeTeacher === 'all' ? meetings : meetings.filter(m => m.manager === activeTeacher), [meetings, activeTeacher]);
 
-            // 取得當前有效的視訊連結：優先使用個案獨立連結，若無則使用全域連結
+            // 取得當前有效的視訊連結：優先使用個案獨立連結，若無則使用「管理該個案老師」的預設連結
             const activeMeetingLink = useMemo(() => {
-                return currentMeeting?.meetingLink || globalConfig?.defaultMeetingLink || '';
-            }, [currentMeeting, globalConfig]);
+                if (!currentMeeting) return '';
+                const teacherLink = teacherConfigs[currentMeeting.manager]?.defaultMeetingLink || '';
+                return currentMeeting.meetingLink || teacherLink;
+            }, [currentMeeting, teacherConfigs]);
 
             const scheduleMap = useMemo(() => {
                 const map = {};
@@ -270,12 +266,15 @@
                 } catch (e) { console.error("Update Error:", e); }
             };
 
-            const updateGlobalConfig = async (field, value) => {
-                if (!user || !window.IEP_FIREBASE) return;
+            const updateTeacherConfig = async (teacherName, field, value) => {
+                if (!user || !window.IEP_FIREBASE || !teacherName) return;
                 const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'global_settings'), { [field]: value }, { merge: true });
-                } catch (e) { console.error("Global Config Update Error:", e); }
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', teacherName), { 
+                        ...teacherConfigs[teacherName],
+                        [field]: value 
+                    }, { merge: true });
+                } catch (e) { console.error("Teacher Config Update Error:", e); }
             };
 
             const handleTogglePreference = (date, slot) => {
@@ -537,53 +536,62 @@
 
                                 {spedTab === 'schedule' && (
                                     <div className="space-y-8 animate-fade-in font-black">
-                                        {/* 全域視訊連結設定 */}
-                                        <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                                            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center shadow-inner shrink-0"><Icon name="video" className="w-7 h-7" /></div>
-                                            <div className="flex-1 space-y-1">
-                                                <label className="text-[10px] opacity-40 uppercase px-2 font-black">預設線上會議連結 (同步至所有個案)</label>
-                                                <input className="w-full border-2 border-slate-200 rounded-2xl px-6 py-3 font-black shadow-inner focus:border-indigo-500 outline-none bg-slate-50" placeholder="貼上 Google Meet / Zoom 連結" value={globalConfig?.defaultMeetingLink || ''} onChange={e => updateGlobalConfig('defaultMeetingLink', e.target.value)} />
-                                            </div>
-                                            <div className="text-[10px] opacity-30 italic max-w-xs leading-relaxed">設定後，所有未個別指定連結的個案將以此連結為準。家長勾選線上模式後即可看到。</div>
-                                        </div>
-
-                                        {activeTeacher === 'all' ? <div className="p-32 text-center bg-white rounded-[50px] border-2 border-slate-200 border-dashed font-black opacity-20 text-xl italic uppercase tracking-widest">請先選擇教師進行日期排程管理</div> :
-                                        <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm animate-fade-in font-black">
-                                            <div className="flex flex-col md:flex-row justify-between mb-10 items-center gap-6">
-                                                <h2 className="text-2xl font-black text-blue-600 flex items-center gap-4 uppercase tracking-tighter"><Icon name="calendar" className="w-8 h-8 font-black" /> {activeTeacher} 開放日期管理</h2>
-                                                <div className="flex gap-3 bg-slate-100 p-2 rounded-2xl shadow-inner border-2 border-slate-200 font-black">
-                                                    <input type="date" className="bg-transparent px-4 py-2 font-black outline-none border-r border-slate-200 font-black" value={dateInput} onChange={e=>setDateInput(e.target.value)}/>
-                                                    <button onClick={() => { 
-                                                        const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
-                                                        const d = (teacherConfigs[activeTeacher] || {}).dates || []; 
-                                                        if(!dateInput || d.includes(dateInput)) return; 
-                                                        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: [...d, dateInput] });
-                                                        setDateInput(''); 
-                                                    }} className="bg-blue-600 text-white px-8 py-2 rounded-xl font-black shadow-md hover:bg-blue-700 active:scale-95 transition-all">新增日期</button>
+                                        {activeTeacher === 'all' ? (
+                                            <div className="p-32 text-center bg-white rounded-[50px] border-2 border-slate-200 border-dashed font-black opacity-20 text-xl italic uppercase tracking-widest">請先選擇教師以進行個別日期與視訊連結管理</div>
+                                        ) : (
+                                            <>
+                                                {/* 個別老師視訊連結設定 */}
+                                                <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-6 border-l-[10px] border-l-indigo-500">
+                                                    <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center shadow-inner shrink-0"><Icon name="video" className="w-7 h-7" /></div>
+                                                    <div className="flex-1 space-y-1">
+                                                        <label className="text-[10px] text-indigo-500 uppercase px-2 font-black tracking-widest">{activeTeacher} 的預設視訊連結</label>
+                                                        <input 
+                                                            className="w-full border-2 border-slate-200 rounded-2xl px-6 py-3 font-black shadow-inner focus:border-indigo-500 outline-none bg-slate-50" 
+                                                            placeholder="貼上您的 Google Meet / Zoom 連結" 
+                                                            value={teacherConfigs[activeTeacher]?.defaultMeetingLink || ''} 
+                                                            onChange={e => updateTeacherConfig(activeTeacher, 'defaultMeetingLink', e.target.value)} 
+                                                        />
+                                                    </div>
+                                                    <div className="text-[10px] opacity-30 italic max-w-[200px] leading-relaxed">此連結會同步給所有由 {activeTeacher} 負責的個案。</div>
                                                 </div>
-                                            </div>
-                                            <div className="flex flex-wrap gap-3 mb-10">
-                                                {(teacherConfigs[activeTeacher]?.dates || []).sort().map(d => ( 
-                                                    <div key={d} className="bg-blue-50 text-blue-700 px-5 py-3 rounded-2xl border-2 border-blue-100 flex items-center font-black text-xs shadow-sm hover:bg-white transition-colors">
-                                                        {formatDateLabel(d)}
-                                                        <button onClick={() => { 
-                                                            const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
-                                                            const newDates = teacherConfigs[activeTeacher].dates.filter(x=>x!==d); 
-                                                            const newSlots = (teacherConfigs[activeTeacher].slots || []).filter(x=>x.date!==d); 
-                                                            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: newDates, slots: newSlots });
-                                                        }} className="ml-4 opacity-20 hover:opacity-100 hover:text-red-500 font-black"><Icon name="x" className="w-4 h-4 font-black" /></button>
-                                                    </div> 
-                                                ))}
-                                            </div>
-                                            <Matrix mode="global" teacherName={activeTeacher} onToggle={(date, slot) => {
-                                                const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
-                                                const s = [...(teacherConfigs[activeTeacher]?.slots || [])];
-                                                const idx = s.findIndex(x => x.date === date && x.slot === slot);
-                                                idx > -1 ? s.splice(idx, 1) : s.push({ date, slot });
-                                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], slots: s });
-                                            }} />
-                                        </div>
-                                        }
+
+                                                <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm animate-fade-in font-black">
+                                                    <div className="flex flex-col md:flex-row justify-between mb-10 items-center gap-6">
+                                                        <h2 className="text-2xl font-black text-blue-600 flex items-center gap-4 uppercase tracking-tighter"><Icon name="calendar" className="w-8 h-8 font-black" /> {activeTeacher} 開放日期管理</h2>
+                                                        <div className="flex gap-3 bg-slate-100 p-2 rounded-2xl shadow-inner border-2 border-slate-200 font-black">
+                                                            <input type="date" className="bg-transparent px-4 py-2 font-black outline-none border-r border-slate-200 font-black" value={dateInput} onChange={e=>setDateInput(e.target.value)}/>
+                                                            <button onClick={() => { 
+                                                                const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
+                                                                const d = (teacherConfigs[activeTeacher] || {}).dates || []; 
+                                                                if(!dateInput || d.includes(dateInput)) return; 
+                                                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: [...d, dateInput] }, { merge: true });
+                                                                setDateInput(''); 
+                                                            }} className="bg-blue-600 text-white px-8 py-2 rounded-xl font-black shadow-md hover:bg-blue-700 active:scale-95 transition-all">新增日期</button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-3 mb-10">
+                                                        {(teacherConfigs[activeTeacher]?.dates || []).sort().map(d => ( 
+                                                            <div key={d} className="bg-blue-50 text-blue-700 px-5 py-3 rounded-2xl border-2 border-blue-100 flex items-center font-black text-xs shadow-sm hover:bg-white transition-colors">
+                                                                {formatDateLabel(d)}
+                                                                <button onClick={() => { 
+                                                                    const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
+                                                                    const newDates = teacherConfigs[activeTeacher].dates.filter(x=>x!==d); 
+                                                                    const newSlots = (teacherConfigs[activeTeacher].slots || []).filter(x=>x.date!==d); 
+                                                                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: newDates, slots: newSlots }, { merge: true });
+                                                                }} className="ml-4 opacity-20 hover:opacity-100 hover:text-red-500 font-black"><Icon name="x" className="w-4 h-4 font-black" /></button>
+                                                            </div> 
+                                                        ))}
+                                                    </div>
+                                                    <Matrix mode="global" teacherName={activeTeacher} onToggle={(date, slot) => {
+                                                        const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
+                                                        const s = [...(teacherConfigs[activeTeacher]?.slots || [])];
+                                                        const idx = s.findIndex(x => x.date === date && x.slot === slot);
+                                                        idx > -1 ? s.splice(idx, 1) : s.push({ date, slot });
+                                                        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], slots: s }, { merge: true });
+                                                    }} />
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 )}
 
@@ -737,8 +745,13 @@
                                             {role === 'sped' && (
                                                 <div className="bg-white p-8 rounded-[40px] border-2 border-indigo-100 shadow-sm flex flex-col md:flex-row items-center gap-6 border-l-[10px] border-l-indigo-500">
                                                     <div className="flex-1 space-y-1">
-                                                        <label className="text-[10px] text-indigo-400 uppercase px-2 font-black">此個案專用會議連結 (留空則使用預設連結)</label>
-                                                        <input className="w-full border-2 border-slate-200 rounded-2xl px-6 py-3 font-black shadow-inner focus:border-indigo-500 outline-none bg-slate-50" placeholder={`預設值：${globalConfig?.defaultMeetingLink || '尚未設定'}`} value={currentMeeting?.meetingLink || ''} onChange={e => updateMeetingField(currentMeeting.id, 'meetingLink', e.target.value)} />
+                                                        <label className="text-[10px] text-indigo-400 uppercase px-2 font-black">此個案專用會議連結 (留空則使用該負責老師預設連結)</label>
+                                                        <input 
+                                                            className="w-full border-2 border-slate-200 rounded-2xl px-6 py-3 font-black shadow-inner focus:border-indigo-500 outline-none bg-slate-50" 
+                                                            placeholder={`管理老師：${currentMeeting.manager} 的預設連結`} 
+                                                            value={currentMeeting?.meetingLink || ''} 
+                                                            onChange={e => updateMeetingField(currentMeeting.id, 'meetingLink', e.target.value)} 
+                                                        />
                                                     </div>
                                                     <div className="text-[10px] opacity-30 italic max-w-[150px]">若此個案需獨立會議室，請於此處貼上新網址並會自動儲存。</div>
                                                 </div>
