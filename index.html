@@ -36,7 +36,7 @@
             background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(203, 213, 225, 0.4) 5px, rgba(203, 213, 225, 0.4) 10px);
         }
 
-        /* 讓側邊欄固定在視窗 */
+        /* 側邊欄固定容器 */
         .sticky-aside {
             position: sticky;
             top: 100px;
@@ -181,7 +181,6 @@
             useEffect(() => {
                 if (!fbReady) return;
                 const { auth, db, appId, onSnapshot, collection, doc, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.IEP_FIREBASE;
-
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -189,11 +188,9 @@
                         } else {
                             await signInAnonymously(auth);
                         }
-                    } catch (err) { console.error("Firebase Auth Error:", err); }
+                    } catch (err) { console.error("Auth Error:", err); }
                 };
-                
                 initAuth();
-                
                 return onAuthStateChanged(auth, (u) => {
                     setUser(u);
                     if (u) {
@@ -201,11 +198,9 @@
                             setMeetings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
                             setLoading(false);
                         });
-
                         const configUnsubs = ["李老師", "傅老師"].map(t => onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'config', t), (s) => {
                             if (s.exists()) setTeacherConfigs(p => ({ ...p, [t]: s.data() }));
                         }));
-
                         return () => { unsubMeetings(); configUnsubs.forEach(un => un()); };
                     }
                 });
@@ -238,15 +233,6 @@
                 if (!d) return "";
                 const date = new Date(d);
                 return `${date.getMonth() + 1}/${date.getDate()} (${["日","一","二","三","四","五","六"][date.getDay()]})`;
-            };
-
-            const calculateFinalTimeStatic = (m) => {
-                if (!m || !m.manager) return null;
-                const cfg = teacherConfigs[m.manager];
-                if (!cfg?.dates?.length || !m.parentPrefs?.length) return null;
-                let overlaps = m.teacherPrefs?.length ? m.parentPrefs.filter(p => cfg.slots?.some(s => s.date === p.date && s.slot === p.slot) && m.teacherPrefs.some(t => t.date === p.date && t.slot === p.slot)) : [];
-                if (!overlaps.length) overlaps = m.parentPrefs.filter(p => cfg.slots?.some(s => s.date === p.date && s.slot === p.slot));
-                return overlaps.length ? [...overlaps].sort((a, b) => a.priority - b.priority)[0] : null;
             };
 
             const resetToHome = useCallback(() => {
@@ -339,7 +325,6 @@
             const downloadExcel = () => {
                 const dates = Array.from(new Set([...(teacherConfigs["李老師"]?.dates || []), ...(teacherConfigs["傅老師"]?.dates || [])])).sort();
                 let csv = "\uFEFF時段," + dates.map(d => formatDateLabel(d)).join(",") + "\n";
-                
                 TIME_SLOTS.forEach(slot => {
                     let row = `${slot.label} (${slot.time})`;
                     dates.forEach(date => {
@@ -349,7 +334,6 @@
                     });
                     csv += row + "\n";
                 });
-
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
@@ -365,46 +349,55 @@
 
             const Matrix = ({ mode, teacherName, currentData, onToggle, disabled = false }) => {
                 const config = teacherConfigs[teacherName] || { dates: [], slots: [] };
-                if (!config.dates?.length) return <div className="p-10 text-center text-slate-400 border-2 border-dashed rounded-3xl font-black font-black">尚未設定開放日期</div>;
+                if (!config.dates?.length) return <div className="p-10 text-center text-slate-400 border-2 border-dashed rounded-3xl font-black">尚未設定開放日期</div>;
                 const sortedDates = [...config.dates].sort();
 
                 return (
                     <div className={`overflow-x-auto border-2 border-slate-200 rounded-3xl bg-white shadow-sm ${disabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-                        <table className="w-full min-w-[500px] text-center font-black">
+                        <table className="w-full min-w-[500px] text-center">
                             <thead><tr className="bg-slate-100 border-b-2 border-slate-200"><th className="p-4 border-r-2 border-slate-200 w-40 uppercase text-xs font-black">時段</th>{sortedDates.map(d => <th key={d} className="p-4 font-black whitespace-nowrap">{formatDateLabel(d)}</th>)}</tr></thead>
                             <tbody>{TIME_SLOTS.map(slot => (
-                                <tr key={slot.time} className="border-b border-slate-200 hover:bg-slate-50 transition-colors font-black">
+                                <tr key={slot.time} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
                                     <td className="p-4 border-r-2 border-slate-200 bg-slate-50 text-xs font-black text-slate-600 leading-tight">
                                         <div className="text-blue-600 mb-1">{slot.label}</div>
                                         <div className="opacity-40 font-normal">{slot.time}</div>
                                     </td>
                                     {sortedDates.map(date => {
                                         const isAvail = config.slots?.some(s => s.date === date && s.slot === slot.time);
-                                        const isSelected = mode === 'global' ? isAvail : currentData?.some(d => d.date === date && d.slot === slot.time);
                                         const isConfirmed = currentMeeting?.confirmedTime?.date === date && currentMeeting?.confirmedTime?.slot === slot.time;
                                         const isPending = pendingSlot?.date === date && pendingSlot?.slot === slot.time;
                                         const isOccupied = meetings.some(m => m.id !== selectedStudentId && m.manager === teacherName && m.confirmedTime?.date === date && m.confirmedTime?.slot === slot.time);
 
-                                        let bgColor = "bg-white";
-                                        if (isConfirmed) bgColor = "bg-emerald-500 text-white ring-4 ring-emerald-100";
-                                        else if (isPending) bgColor = "bg-amber-400 text-white ring-4 ring-amber-100";
-                                        else if (isSelected) bgColor = "bg-blue-600 text-white shadow-md";
-                                        else if (isOccupied) bgColor = "bg-slate-100 cursor-not-allowed";
-                                        else if (mode !== 'global' && !isAvail) bgColor = "bg-slash";
-
                                         const pPref = currentMeeting?.parentPrefs?.find(p => p.date === date && p.slot === slot.time);
                                         const tPref = currentMeeting?.teacherPrefs?.find(t => t.date === date && t.slot === slot.time);
+                                        const isSelected = mode === 'global' ? isAvail : currentData?.some(d => d.date === date && d.slot === slot.time);
+
+                                        let bgColor = "bg-white";
+                                        if (isConfirmed || isPending) bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100";
+                                        else if (role === 'sped') {
+                                            // 特師端顏色編碼邏輯
+                                            if (pPref && tPref) bgColor = "bg-orange-500 text-white"; // 重疊：橘色
+                                            else if (tPref) bgColor = "bg-blue-500 text-white"; // 導師選：藍色
+                                            else if (pPref) bgColor = "bg-green-500 text-white"; // 家長選：綠色
+                                            else if (isOccupied) bgColor = "bg-slate-100 cursor-not-allowed opacity-50";
+                                            else if (!isAvail) bgColor = "bg-slash";
+                                        } else {
+                                            // 家長或導師端
+                                            if (isSelected) bgColor = "bg-blue-600 text-white shadow-md";
+                                            else if (isOccupied) bgColor = "bg-slate-100 cursor-not-allowed";
+                                            else if (!isAvail) bgColor = "bg-slash";
+                                        }
 
                                         return (
-                                            <td key={`${date}-${slot.time}`} onClick={() => (mode === 'global' || isAvail) && onToggle(date, slot.time)} className={`p-4 border-r border-slate-200 last:border-0 h-24 transition-all relative ${isAvail || mode === 'global' ? 'cursor-pointer hover:bg-blue-50' : ''} ${bgColor}`}>
-                                                {isConfirmed && <Icon name="check-circle" className="w-8 h-8 mx-auto" />}
-                                                {isPending && <Icon name="clock" className="w-8 h-8 mx-auto animate-pulse" />}
-                                                {isSelected && !isConfirmed && !isPending && <Icon name="check" className="w-8 h-8 mx-auto" />}
-                                                {isOccupied && !isConfirmed && <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded font-black font-black">他案已定</div>}
-                                                {!isConfirmed && !isOccupied && !isSelected && (
-                                                    <div className="flex flex-col items-center gap-1 opacity-80 pointer-events-none font-black">
-                                                        {(role === 'sped' || role === 'teacher') && pPref && <span className="bg-yellow-200 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black">家 {pPref.priority}</span>}
-                                                        {(role === 'sped' || role === 'parent') && tPref && <span className="bg-green-200 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black">導</span>}
+                                            <td key={`${date}-${slot.time}`} onClick={() => (mode === 'global' || isAvail) && onToggle(date, slot.time)} className={`p-4 border-r border-slate-200 last:border-0 h-24 transition-all relative ${isAvail || mode === 'global' ? 'cursor-pointer hover:opacity-80' : ''} ${bgColor}`}>
+                                                {(isConfirmed || isPending) && <Icon name="check-circle" className="w-8 h-8 mx-auto" />}
+                                                {role !== 'sped' && isSelected && !isConfirmed && <Icon name="check" className="w-8 h-8 mx-auto" />}
+                                                {isOccupied && !isConfirmed && <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded">他案定案</div>}
+                                                
+                                                {/* 特師端標示家長優先級 */}
+                                                {role === 'sped' && pPref && !isConfirmed && !isPending && (
+                                                    <div className="absolute top-1 right-1">
+                                                        <span className="bg-white/30 text-[9px] px-1 rounded font-black">家{pPref.priority}</span>
                                                     </div>
                                                 )}
                                             </td>
@@ -420,33 +413,33 @@
             if (loading) return <div className="min-h-screen flex items-center justify-center bg-white font-black"><div className="flex flex-col items-center gap-4"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div><p className="font-black text-blue-600">系統載入中</p></div></div>;
 
             return (
-                <div className="min-h-screen pb-20 font-black">
-                    <nav className="bg-white border-b-2 border-slate-200 sticky top-0 z-50 px-4 md:px-8 h-20 flex items-center justify-between shadow-sm no-print font-black">
-                        <div className="flex items-center gap-4 font-black">
+                <div className="min-h-screen pb-20">
+                    <nav className="bg-white border-b-2 border-slate-200 sticky top-0 z-50 px-4 md:px-8 h-20 flex items-center justify-between shadow-sm no-print">
+                        <div className="flex items-center gap-4">
                             <button onClick={resetToHome} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-90"><Icon name="home" /></button>
-                            <span className="font-black text-xl tracking-tighter uppercase font-black">IEP 會議時間協調系統</span>
+                            <span className="font-black text-xl tracking-tighter uppercase">IEP 會議時間協調系統</span>
                         </div>
-                        <div className="flex bg-slate-100 p-1.5 rounded-2xl border-2 border-slate-200 shadow-inner font-black">
+                        <div className="flex bg-slate-100 p-1.5 rounded-2xl border-2 border-slate-200 shadow-inner">
                             {['sped', 'parent', 'teacher'].map(r => (
                                 <button key={r} onClick={() => { setRole(r); setIsAuth(false); setSelectedStudentId(null); setIsStudentAuthorized(false); }} className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${role === r ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}>{r==='sped'?'特師':r==='parent'?'家長':'導師'}</button>
                             ))}
                         </div>
                     </nav>
 
-                    <main className="max-w-7xl mx-auto p-4 md:p-8 font-black">
+                    <main className="max-w-[1400px] mx-auto p-4 md:p-8">
                         {role === 'home' && (
                             <div className="text-center py-20 animate-fade-in" key="view-home">
-                                <h1 className="text-4xl md:text-5xl font-black mb-16 uppercase tracking-tighter font-black">IEP 會議時間協調系統</h1>
+                                <h1 className="text-4xl md:text-5xl font-black mb-16 uppercase tracking-tighter">IEP 會議時間協調系統</h1>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto font-black">
                                     {[
                                         { r: 'sped', l: '特師入口', i: 'settings', d: '管理日期與個案' },
                                         { r: 'parent', l: '家長入口', i: 'user', d: '填寫志願與回饋' },
                                         { r: 'teacher', l: '導師入口', i: 'clipboard-list', d: '安排課務與回饋' }
                                     ].map(item => (
-                                        <div key={item.r} onClick={() => setRole(item.r)} className="p-10 bg-white rounded-[40px] border-2 border-slate-200 shadow-sm hover:shadow-xl cursor-pointer group hover:border-blue-500 transition-all border-b-[10px] hover:border-b-blue-600 font-black">
-                                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform shadow-inner font-black"><Icon name={item.i} className="w-8 h-8 font-black" /></div>
-                                            <h3 className="text-2xl font-black mb-2 font-black font-black">{item.l}</h3>
-                                            <p className="text-slate-400 text-sm font-black opacity-60 uppercase font-black">{item.d}</p>
+                                        <div key={item.r} onClick={() => setRole(item.r)} className="p-10 bg-white rounded-[40px] border-2 border-slate-200 shadow-sm hover:shadow-xl cursor-pointer group hover:border-blue-500 transition-all border-b-[10px] hover:border-b-blue-600">
+                                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform shadow-inner"><Icon name={item.i} className="w-8 h-8" /></div>
+                                            <h3 className="text-2xl font-black mb-2">{item.l}</h3>
+                                            <p className="text-slate-400 text-sm font-black opacity-60 uppercase">{item.d}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -454,62 +447,62 @@
                         )}
 
                         {role === 'sped' && !isAuth && (
-                            <div className="max-w-sm mx-auto py-20 text-center animate-fade-in font-black" key="view-sped-login">
-                                <div className="bg-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-200 border-t-8 border-t-blue-600 font-black">
+                            <div className="max-w-sm mx-auto py-20 text-center animate-fade-in" key="view-sped-login">
+                                <div className="bg-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-200 border-t-8 border-t-blue-600">
                                     <div className="bg-blue-600 text-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg font-black"><Icon name="lock" className="w-8 h-8 font-black" /></div>
-                                    <h2 className="text-2xl font-black mb-8 uppercase tracking-widest font-black">管理端驗證</h2>
-                                    <div className="relative mb-6 font-black">
-                                        <input type={showAdminPwd ? "text" : "password"} placeholder="請輸入管理代碼" className="w-full border-2 border-slate-200 rounded-2xl px-6 py-4 text-center font-black outline-none focus:border-blue-600 bg-slate-50 shadow-inner font-black" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} />
+                                    <h2 className="text-2xl font-black mb-8 uppercase tracking-widest">管理端驗證</h2>
+                                    <div className="relative mb-6">
+                                        <input type={showAdminPwd ? "text" : "password"} placeholder="請輸入管理代碼" className="w-full border-2 border-slate-200 rounded-2xl px-6 py-4 text-center font-black outline-none focus:border-blue-600 bg-slate-50 shadow-inner" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} />
                                         <button onClick={() => setShowAdminPwd(!showAdminPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-30 hover:opacity-100 transition-opacity font-black"><Icon name={showAdminPwd ? "eye-off" : "eye"} /></button>
                                     </div>
-                                    {adminPwdError && <p className="text-red-500 text-sm mb-6 font-black animate-bounce font-black">{adminPwdError}</p>}
+                                    {adminPwdError && <p className="text-red-500 text-sm mb-6 font-black animate-bounce">{adminPwdError}</p>}
                                     <button onClick={handleAdminLogin} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl active:scale-95 transition-all hover:bg-black font-black">確認登入</button>
                                 </div>
                             </div>
                         )}
 
                         {role === 'sped' && isAuth && !selectedStudentId && (
-                            <div className="space-y-8 animate-fade-in font-black" key="view-sped-dashboard">
-                                <div className="flex flex-wrap gap-2 bg-white p-3 rounded-3xl border-2 border-slate-200 shadow-sm items-center font-black">
+                            <div className="space-y-8 animate-fade-in" key="view-sped-dashboard">
+                                <div className="flex flex-wrap gap-2 bg-white p-3 rounded-3xl border-2 border-slate-200 shadow-sm items-center">
                                     {['students', 'schedule', 'report', 'calendar'].map(tab => (
-                                        <button key={tab} onClick={() => setSpedTab(tab)} className={`px-6 py-2.5 rounded-2xl font-black text-xs transition-all font-black ${spedTab===tab?'bg-blue-600 text-white shadow-md':'text-blue-600 hover:bg-blue-50'}`}>{tab==='students'?'個案管理':tab==='schedule'?'日期排程':tab==='report'?'進度追蹤':'排程總表'}</button>
+                                        <button key={tab} onClick={() => setSpedTab(tab)} className={`px-6 py-2.5 rounded-2xl font-black text-xs transition-all ${spedTab===tab?'bg-blue-600 text-white shadow-md':'text-blue-600 hover:bg-blue-50'}`}>{tab==='students'?'個案管理':tab==='schedule'?'日期排程':tab==='report'?'進度追蹤':'排程總表'}</button>
                                     ))}
-                                    <div className="ml-auto flex gap-2 items-center bg-slate-50 p-1.5 rounded-2xl border-2 border-slate-200 shadow-inner font-black">
-                                        {['all', '李老師', '傅老師'].map(t => ( <button key={t} onClick={() => setActiveTeacher(t)} className={`px-4 py-1.5 rounded-xl text-xs font-black font-black ${activeTeacher === t ? 'bg-white text-blue-600 shadow-sm' : 'opacity-40'}`}>{t === 'all' ? '全部' : t}</button> ))}
+                                    <div className="ml-auto flex gap-2 items-center bg-slate-50 p-1.5 rounded-2xl border-2 border-slate-200 shadow-inner">
+                                        {['all', '李老師', '傅老師'].map(t => ( <button key={t} onClick={() => setActiveTeacher(t)} className={`px-4 py-1.5 rounded-xl text-xs font-black ${activeTeacher === t ? 'bg-white text-blue-600 shadow-sm' : 'opacity-40'}`}>{t === 'all' ? '全部' : t}</button> ))}
                                     </div>
                                 </div>
 
                                 {spedTab === 'students' && (
-                                    <div className="space-y-8 font-black">
-                                        <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-6 font-black">
-                                            <div className="space-y-1"><label className="text-[10px] opacity-40 uppercase px-2 font-black">學生姓名</label><input id="std-name" className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 font-black shadow-inner focus:border-blue-500 outline-none bg-slate-50 font-black"/></div>
-                                            <div className="space-y-1"><label className="text-[10px] opacity-40 uppercase px-2 font-black">調查密碼</label><input id="std-pwd" className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 font-black shadow-inner focus:border-blue-500 outline-none bg-slate-50 font-black"/></div>
-                                            <div className="space-y-1"><label className="text-[10px] opacity-40 uppercase px-2 font-black">個管教師</label><select className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 font-black bg-slate-50 font-black" value={createTeacher} onChange={e=>setCreateTeacher(e.target.value)}><option value="李老師">李老師</option><option value="傅老師">傅老師</option></select></div>
-                                            <div className="flex items-end font-black"><button onClick={() => { const n = document.getElementById('std-name'); const p = document.getElementById('std-pwd'); createStudent(n.value, p.value); n.value=''; p.value=''; }} className="w-full bg-blue-600 text-white h-14 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all font-black">建立個案檔案</button></div>
+                                    <div className="space-y-8">
+                                        <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-6">
+                                            <div className="space-y-1"><label className="text-[10px] opacity-40 uppercase font-black">學生姓名</label><input id="std-name" className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 font-black shadow-inner focus:border-blue-500 outline-none bg-slate-50 font-black"/></div>
+                                            <div className="space-y-1"><label className="text-[10px] opacity-40 uppercase font-black">調查密碼</label><input id="std-pwd" className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 font-black shadow-inner focus:border-blue-500 outline-none bg-slate-50 font-black"/></div>
+                                            <div className="space-y-1"><label className="text-[10px] opacity-40 uppercase font-black">個管教師</label><select className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 font-black bg-slate-50 font-black" value={createTeacher} onChange={e=>setCreateTeacher(e.target.value)}><option value="李老師">李老師</option><option value="傅老師">傅老師</option></select></div>
+                                            <div className="flex items-end font-black"><button onClick={() => { const n = document.getElementById('std-name'); const p = document.getElementById('std-pwd'); createStudent(n.value, p.value); n.value=''; p.value=''; }} className="w-full bg-blue-600 text-white h-14 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">建立個案檔案</button></div>
                                         </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 font-black">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                                             {filteredMeetings.map(m => ( 
-                                                <div key={m.id} className={`p-8 rounded-[40px] border-2 border-slate-200 transition-all relative shadow-sm font-black ${m.confirmedTime ? 'bg-emerald-50 border-emerald-500' : 'bg-white hover:border-blue-200'}`}>
-                                                    <div className="flex justify-between items-start mb-6 font-black font-black">
-                                                        <div className={`w-14 h-14 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner font-black ${m.manager === '傅老師' ? 'bg-indigo-50 text-indigo-600 border-2 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-2 border-emerald-100'}`}>{m.studentName?.[0]}</div>
+                                                <div key={m.id} className={`p-8 rounded-[40px] border-2 border-slate-200 transition-all relative shadow-sm ${m.confirmedTime ? 'bg-emerald-50 border-emerald-500' : 'bg-white hover:border-blue-200'}`}>
+                                                    <div className="flex justify-between items-start mb-6">
+                                                        <div className={`w-14 h-14 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner ${m.manager === '傅老師' ? 'bg-indigo-50 text-indigo-600 border-2 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-2 border-emerald-100'}`}>{m.studentName?.[0]}</div>
                                                         <div className="flex gap-1 font-black">
-                                                            <button title="編輯個案" onClick={() => { setEditingInfoId(m.id); setEditName(m.studentName); setEditPwd(m.accessPassword); setEditManager(m.manager); }} className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-all font-black"><Icon name="edit-3" /></button>
-                                                            <button title="刪除個案" onClick={() => deleteStudent(m.id)} className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-all font-black"><Icon name="trash-2" /></button>
+                                                            <button title="編輯個案" onClick={() => { setEditingInfoId(m.id); setEditName(m.studentName); setEditPwd(m.accessPassword); setEditManager(m.manager); }} className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-all"><Icon name="edit-3" /></button>
+                                                            <button title="刪除個案" onClick={() => deleteStudent(m.id)} className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-all"><Icon name="trash-2" /></button>
                                                         </div>
                                                     </div>
                                                     {editingInfoId === m.id ? (
-                                                        <div className="space-y-4 bg-slate-50 p-6 rounded-[30px] border-2 border-blue-100 animate-fade-in shadow-inner font-black font-black">
+                                                        <div className="space-y-4 bg-slate-50 p-6 rounded-[30px] border-2 border-blue-100 animate-fade-in shadow-inner">
                                                             <input className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-black outline-none focus:border-blue-500 shadow-sm" value={editName} onChange={e=>setEditName(e.target.value)} placeholder="姓名"/>
                                                             <input className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-black outline-none focus:border-blue-500 shadow-sm" value={editPwd} onChange={e=>setEditPwd(e.target.value)} placeholder="密碼"/>
-                                                            <select className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-black shadow-sm font-black" value={editManager} onChange={e=>setEditManager(e.target.value)}><option value="李老師">李老師</option><option value="傅老師">傅老師</option></select>
-                                                            <div className="flex gap-3 pt-2 font-black"><button onClick={() => setEditingInfoId(null)} className="flex-1 text-xs opacity-50 py-3 font-black bg-slate-200 rounded-xl">取消</button><button onClick={() => saveStudentEdit(m.id)} className="flex-1 text-xs bg-blue-600 text-white font-black py-3 rounded-xl shadow-md font-black">儲存</button></div>
+                                                            <select className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-black shadow-sm" value={editManager} onChange={e=>setEditManager(e.target.value)}><option value="李老師">李老師</option><option value="傅老師">傅老師</option></select>
+                                                            <div className="flex gap-3 pt-2"><button onClick={() => setEditingInfoId(null)} className="flex-1 text-xs opacity-50 py-3 font-black bg-slate-200 rounded-xl">取消</button><button onClick={() => saveStudentEdit(m.id)} className="flex-1 text-xs bg-blue-600 text-white font-black py-3 rounded-xl shadow-md">儲存</button></div>
                                                         </div>
                                                     ) : (
-                                                        <div font-black font-black>
-                                                            <h3 className="text-2xl font-black mb-1 flex justify-between items-center text-black font-black font-black font-black">{m.studentName || "未命名"}<button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 text-xs font-black underline decoration-2 underline-offset-4 font-black">詳情</button></h3>
-                                                            <p className="text-xs font-black opacity-30 mb-6 tracking-widest font-black font-black font-black">個案管理：{m.manager}</p>
-                                                            <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 text-sm font-black shadow-inner font-black font-black font-black"><Icon name="key" className="w-4 h-4 opacity-20 font-black font-black" /><span>{m.accessPassword}</span></div>
-                                                        </div>
+                                                        <>
+                                                            <h3 className="text-2xl font-black mb-1 flex justify-between items-center text-black">{m.studentName || "未命名"}<button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 text-xs font-black underline decoration-2 underline-offset-4">詳情</button></h3>
+                                                            <p className="text-xs font-black opacity-30 mb-6 tracking-widest">個案管理：{m.manager}</p>
+                                                            <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 text-sm font-black shadow-inner font-black"><Icon name="key" className="w-4 h-4 opacity-20" /><span>{m.accessPassword}</span></div>
+                                                        </>
                                                     )}
                                                 </div> 
                                             ))}
@@ -518,31 +511,31 @@
                                 )}
 
                                 {spedTab === 'schedule' && (
-                                    activeTeacher === 'all' ? <div className="p-32 text-center bg-white rounded-[50px] border-2 border-slate-200 border-dashed font-black opacity-20 text-xl italic uppercase tracking-widest font-black">請先選擇教師進行日期排程管理</div> :
-                                    <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm animate-fade-in font-black font-black">
-                                        <div className="flex flex-col md:flex-row justify-between mb-10 items-center gap-6 font-black font-black">
-                                            <h2 className="text-2xl font-black text-blue-600 flex items-center gap-4 uppercase tracking-tighter font-black font-black"><Icon name="calendar" className="w-8 h-8 font-black" /> {activeTeacher} 開放日期管理</h2>
-                                            <div className="flex gap-3 bg-slate-100 p-2 rounded-2xl shadow-inner border-2 border-slate-200 font-black font-black">
-                                                <input type="date" className="bg-transparent px-4 py-2 font-black outline-none border-r border-slate-200 font-black" value={dateInput} onChange={e=>setDateInput(e.target.value)}/>
+                                    activeTeacher === 'all' ? <div className="p-32 text-center bg-white rounded-[50px] border-2 border-slate-200 border-dashed font-black opacity-20 text-xl italic uppercase tracking-widest">請先選擇教師進行日期排程管理</div> :
+                                    <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm animate-fade-in font-black">
+                                        <div className="flex flex-col md:flex-row justify-between mb-10 items-center gap-6">
+                                            <h2 className="text-2xl font-black text-blue-600 flex items-center gap-4 uppercase tracking-tighter font-black"><Icon name="calendar" className="w-8 h-8 font-black" /> {activeTeacher} 開放日期管理</h2>
+                                            <div className="flex gap-3 bg-slate-100 p-2 rounded-2xl shadow-inner border-2 border-slate-200 font-black">
+                                                <input type="date" className="bg-transparent px-4 py-2 font-black outline-none border-r border-slate-200" value={dateInput} onChange={e=>setDateInput(e.target.value)}/>
                                                 <button onClick={() => { 
                                                     const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
                                                     const d = (teacherConfigs[activeTeacher] || {}).dates || []; 
                                                     if(!dateInput || d.includes(dateInput)) return; 
                                                     setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: [...d, dateInput] });
                                                     setDateInput(''); 
-                                                }} className="bg-blue-600 text-white px-8 py-2 rounded-xl font-black shadow-md hover:bg-blue-700 active:scale-95 transition-all font-black">新增日期</button>
+                                                }} className="bg-blue-600 text-white px-8 py-2 rounded-xl font-black shadow-md hover:bg-blue-700 active:scale-95 transition-all">新增日期</button>
                                             </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-3 mb-10 font-black font-black">
+                                        <div className="flex flex-wrap gap-3 mb-10">
                                             {(teacherConfigs[activeTeacher]?.dates || []).sort().map(d => ( 
-                                                <div key={d} className="bg-blue-50 text-blue-700 px-5 py-3 rounded-2xl border-2 border-blue-100 flex items-center font-black text-xs shadow-sm hover:bg-white transition-colors font-black font-black">
+                                                <div key={d} className="bg-blue-50 text-blue-700 px-5 py-3 rounded-2xl border-2 border-blue-100 flex items-center font-black text-xs shadow-sm hover:bg-white transition-colors font-black">
                                                     {formatDateLabel(d)}
                                                     <button onClick={() => { 
                                                         const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
                                                         const newDates = teacherConfigs[activeTeacher].dates.filter(x=>x!==d); 
                                                         const newSlots = (teacherConfigs[activeTeacher].slots || []).filter(x=>x.date!==d); 
                                                         setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: newDates, slots: newSlots });
-                                                    }} className="ml-4 opacity-20 hover:opacity-100 hover:text-red-600 font-black font-black"><Icon name="x" className="w-4 h-4 font-black" /></button>
+                                                    }} className="ml-4 opacity-20 hover:opacity-100 hover:text-red-600 font-black font-black"><Icon name="x" className="w-4 h-4" /></button>
                                                 </div> 
                                             ))}
                                         </div>
@@ -557,37 +550,37 @@
                                 )}
 
                                 {spedTab === 'report' && (
-                                    <div className="bg-white rounded-[40px] border-2 border-slate-200 shadow-sm overflow-hidden font-black">
-                                        <div className="p-8 border-b-2 border-slate-100 bg-slate-50 flex justify-between items-center font-black font-black"><h3 className="text-xl font-black tracking-widest opacity-80 font-black">進度即時追蹤</h3></div>
-                                        <div className="overflow-x-auto font-black font-black">
+                                    <div className="bg-white rounded-[40px] border-2 border-slate-200 shadow-sm overflow-hidden font-black font-black">
+                                        <div className="p-8 border-b-2 border-slate-100 bg-slate-50 flex justify-between items-center font-black font-black"><h3 className="text-xl font-black tracking-widest opacity-80">進度即時追蹤</h3></div>
+                                        <div className="overflow-x-auto">
                                             <table className="w-full text-left font-black">
-                                                <thead className="bg-white border-b text-slate-600 uppercase text-lg font-black tracking-widest font-black">
-                                                    <tr className="h-16">
-                                                        <th className="px-8 font-black">個案姓名</th>
-                                                        <th className="px-4 text-center font-black">家長進度</th>
-                                                        <th className="px-4 text-center font-black">導師進度</th>
-                                                        <th className="px-4 text-center font-black">定案時間</th>
-                                                        <th className="px-4 font-black">微調備註</th>
-                                                        <th className="px-8 text-center font-black">操作</th>
+                                                <thead className="bg-white border-b-2 border-slate-200 text-slate-700 uppercase text-xl font-black tracking-widest">
+                                                    <tr className="h-20">
+                                                        <th className="px-8">個案姓名</th>
+                                                        <th className="px-4 text-center">家長進度</th>
+                                                        <th className="px-4 text-center">導師進度</th>
+                                                        <th className="px-4 text-center">定案時間</th>
+                                                        <th className="px-4">微調備註</th>
+                                                        <th className="px-8 text-center">操作</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="font-black text-lg">
+                                                <tbody className="text-xl font-black">
                                                     {filteredMeetings.map(m => {
                                                         const hasT = m.teacherUnavailable || (m.teacherPrefs?.length > 0);
                                                         return (
-                                                            <tr key={m.id} className="border-b border-slate-100 h-24 hover:bg-slate-50/50 transition-colors font-black">
-                                                                <td className="px-8 font-black text-xl">{m?.studentName || "未命名"}</td>
-                                                                <td className="px-4 text-center font-black font-black">
-                                                                    <span className={`px-6 py-2 rounded-2xl text-base shadow-sm font-black ${m.parentLocked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-40 font-black'}`}>{m.parentLocked ? '已提交' : '填寫中'}</span>
+                                                            <tr key={m.id} className="border-b border-slate-100 h-28 hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-8 text-2xl">{m?.studentName || "未命名"}</td>
+                                                                <td className="px-4 text-center">
+                                                                    <span className={`px-6 py-2.5 rounded-2xl text-lg shadow-sm font-black ${m.parentLocked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-40'}`}>{m.parentLocked ? '已提交' : '填寫中'}</span>
                                                                 </td>
-                                                                <td className="px-4 text-center font-black font-black">
-                                                                    <span className={`px-6 py-2 rounded-2xl text-base shadow-sm font-black ${hasT ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-40 font-black'}`}>{m.teacherUnavailable ? '不克出席' : (m.teacherPrefs?.length > 0 ? '已填報' : '未填寫')}</span>
+                                                                <td className="px-4 text-center">
+                                                                    <span className={`px-6 py-2.5 rounded-2xl text-lg shadow-sm font-black ${hasT ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-40'}`}>{m.teacherUnavailable ? '不克出席' : (m.teacherPrefs?.length > 0 ? '已填報' : '未填寫')}</span>
                                                                 </td>
-                                                                <td className="px-4 text-center font-black font-black">
-                                                                    {m.confirmedTime ? <span className="bg-emerald-500 text-white px-5 py-2 rounded-2xl text-base shadow-lg inline-block font-black font-black font-black font-black">{formatDateLabel(m.confirmedTime.date)} {m.confirmedTime.slot}</span> : <span className="opacity-10 italic font-black font-black">等待定案</span>}
+                                                                <td className="px-4 text-center">
+                                                                    {m.confirmedTime ? <span className="bg-emerald-500 text-white px-5 py-2 rounded-2xl text-lg shadow-lg inline-block font-black font-black">{formatDateLabel(m.confirmedTime.date)} {m.confirmedTime.slot}</span> : <span className="opacity-10 italic">等待定案</span>}
                                                                 </td>
-                                                                <td className="px-4 text-slate-500 text-base font-normal italic font-black font-black">{m.confirmedTimeRemark || "-"}</td>
-                                                                <td className="px-8 text-center font-black font-black"><button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 underline font-black text-xl hover:text-blue-800 transition-colors font-black">管理個案</button></td>
+                                                                <td className="px-4 text-slate-500 text-lg font-normal italic">{m.confirmedTimeRemark || "-"}</td>
+                                                                <td className="px-8 text-center"><button onClick={() => setSelectedStudentId(m.id)} className="text-blue-600 underline text-2xl font-black hover:text-blue-800 transition-colors">管理</button></td>
                                                             </tr>
                                                         );
                                                     })}
@@ -599,34 +592,34 @@
 
                                 {spedTab === 'calendar' && (
                                     <div className="bg-white p-12 rounded-[50px] border-2 border-slate-200 shadow-sm print-container overflow-hidden font-black">
-                                        <div className="flex justify-between items-center mb-10 no-print font-black">
-                                            <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-800 font-black">會議排程總表</h2>
-                                            <button onClick={downloadExcel} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black flex items-center gap-3 shadow-xl active:scale-95 transition-all hover:bg-emerald-700 font-black font-black font-black"><Icon name="file-spreadsheet" className="font-black" /> 下載 Excel (CSV)</button>
+                                        <div className="flex justify-between items-center mb-10 no-print">
+                                            <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-800">會議排程總表</h2>
+                                            <button onClick={downloadExcel} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black flex items-center gap-3 shadow-xl active:scale-95 transition-all hover:bg-emerald-700 font-black"><Icon name="file-spreadsheet" /> 下載 Excel (CSV)</button>
                                         </div>
                                         <div className="overflow-x-auto font-black font-black">
-                                            <table className="w-full border-collapse border-2 border-slate-200 font-black font-black">
+                                            <table className="w-full border-collapse border-2 border-slate-200 font-black">
                                                 <thead>
-                                                    <tr className="bg-slate-50 h-20 font-black font-black font-black">
-                                                        <th className="p-4 border-2 border-slate-200 font-black opacity-40 uppercase text-lg w-48 font-black">時段</th>
+                                                    <tr className="bg-slate-50 h-24 font-black">
+                                                        <th className="p-4 border-2 border-slate-200 font-black opacity-40 uppercase text-2xl w-48">時段</th>
                                                         {Array.from(new Set([...(teacherConfigs["李老師"]?.dates || []), ...(teacherConfigs["傅老師"]?.dates || [])])).filter(d=>!!d).sort().map(d => ( 
-                                                            <th key={d} className="p-4 border-2 border-slate-200 text-slate-800 font-black text-xl font-black font-black">{formatDateLabel(d)}</th> 
+                                                            <th key={d} className="p-4 border-2 border-slate-200 text-slate-800 font-black text-2xl whitespace-nowrap">{formatDateLabel(d)}</th> 
                                                         ))}
                                                     </tr>
                                                 </thead>
-                                                <tbody className="font-black font-black">
+                                                <tbody className="font-black text-xl font-black">
                                                     {TIME_SLOTS.map(slot => ( 
-                                                        <tr key={slot.time} className="h-32 hover:bg-slate-50/20 transition-colors font-black font-black">
-                                                            <td className="p-3 border-2 border-slate-200 text-xl bg-slate-50 font-black text-center leading-tight font-black font-black font-black">
+                                                        <tr key={slot.time} className="h-32 hover:bg-slate-50/20 transition-colors font-black">
+                                                            <td className="p-3 border-2 border-slate-200 text-2xl bg-slate-50 font-black text-center leading-tight">
                                                                 <div className="text-blue-600 mb-1">{slot.label}</div>
-                                                                <div className="text-sm font-normal opacity-50 font-black">{slot.time}</div>
+                                                                <div className="text-sm font-normal opacity-50">{slot.time}</div>
                                                             </td>
                                                             {Array.from(new Set([...(teacherConfigs["李老師"]?.dates || []), ...(teacherConfigs["傅老師"]?.dates || [])])).filter(d=>!!d).sort().map(date => { 
                                                                 const scheduled = scheduleMap[`${date}_${slot.time}`] || []; return ( 
-                                                                    <td key={`${date}-${slot.time}`} className="p-2 border-2 border-slate-200 align-top bg-white font-black font-black font-black">
+                                                                    <td key={`${date}-${slot.time}`} className="p-2 border-2 border-slate-200 align-top bg-white font-black font-black">
                                                                         {scheduled.map(s => ( 
-                                                                            <div key={s.id} onClick={() => setSelectedStudentId(s.id)} className={`p-4 rounded-2xl mb-2 text-sm font-black text-white cursor-pointer shadow-md hover:scale-105 transition-transform border-b-4 ${s.manager === '傅老師' ? 'bg-[#6366f1] border-[#3730a3]' : 'bg-[#10b981] border-[#065f46]'} font-black font-black`}>
-                                                                                <div className="text-base font-black mb-1 font-black">{s.studentName} {s.confirmedTime.mode === 'online' ? '💻' : '🏢'}</div>
-                                                                                {s.confirmedTimeRemark && <span className="block opacity-70 italic border-t border-white/20 mt-2 pt-2 text-xs font-black font-black font-black font-black">註：{s.confirmedTimeRemark}</span>}
+                                                                            <div key={s.id} onClick={() => setSelectedStudentId(s.id)} className={`p-4 rounded-2xl mb-2 text-base font-black text-white cursor-pointer shadow-md hover:scale-105 transition-transform border-b-4 ${s.manager === '傅老師' ? 'bg-[#6366f1] border-[#3730a3]' : 'bg-[#10b981] border-[#065f46]'} font-black`}>
+                                                                                <div className="font-black mb-1">{s.studentName} {s.confirmedTime.mode === 'online' ? '💻' : '🏢'}</div>
+                                                                                {s.confirmedTimeRemark && <span className="block opacity-70 italic border-t border-white/20 mt-2 pt-2 text-sm leading-tight font-black">註：{s.confirmedTimeRemark}</span>}
                                                                             </div> 
                                                                         ))}
                                                                     </td> 
@@ -646,9 +639,9 @@
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10 animate-fade-in py-10 font-black" key="view-list">
                                 {meetings.map(m => ( 
                                     <div key={m.id} onClick={() => setSelectedStudentId(m.id)} className="p-12 bg-white rounded-[50px] border-2 border-slate-200 shadow-sm hover:shadow-2xl cursor-pointer group hover:border-blue-500 transition-all text-center border-b-[12px] border-b-transparent hover:border-b-blue-600 shadow-lg relative overflow-hidden font-black">
-                                        <div className="w-24 h-24 bg-slate-50 text-slate-300 rounded-[35px] flex items-center justify-center mx-auto mb-8 font-black text-4xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner font-black font-black">{m?.studentName?.[0]}</div>
-                                        <h3 className="text-3xl font-black mb-4 font-black font-black">{m?.studentName || "未命名"}</h3>
-                                        <p className="text-blue-600 font-black text-sm flex items-center justify-center gap-2 uppercase tracking-widest font-black opacity-60 group-hover:opacity-100 font-black font-black">進入會議調查填報 <Icon name="chevron-right" className="w-5 h-5 font-black font-black" /></p>
+                                        <div className="w-24 h-24 bg-slate-50 text-slate-300 rounded-[35px] flex items-center justify-center mx-auto mb-8 font-black text-4xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner font-black">{m?.studentName?.[0]}</div>
+                                        <h3 className="text-3xl font-black mb-4 font-black">{m?.studentName || "未命名"}</h3>
+                                        <p className="text-blue-600 font-black text-sm flex items-center justify-center gap-2 uppercase tracking-widest font-black opacity-60 group-hover:opacity-100 font-black">進入會議調查填報 <Icon name="chevron-right" className="w-5 h-5 font-black" /></p>
                                     </div> 
                                 ))}
                             </div>
@@ -657,123 +650,116 @@
                         {selectedStudentId && currentMeeting && (
                             (!isStudentAuthorized && role !== 'sped') ? (
                                 <div className="max-w-sm mx-auto py-20 animate-fade-in font-black" key="view-student-auth">
-                                    <div className="bg-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-200 relative overflow-hidden text-center border-t-8 border-amber-400 font-black font-black font-black">
-                                        <div className="bg-amber-400 text-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg font-black font-black font-black font-black font-black font-black"><Icon name="key" className="w-8 h-8 font-black font-black font-black" /></div>
-                                        <h2 className="text-xl font-black mb-8 uppercase tracking-widest font-black font-black font-black font-black font-black font-black">請輸入調查密碼</h2>
-                                        <div className="relative mb-6 font-black font-black font-black font-black font-black font-black">
-                                            <input type={showStudentPwd ? "text" : "password"} placeholder="個案存取密碼" className="w-full border-2 border-slate-200 rounded-2xl px-6 py-4 text-center text-2xl font-black tracking-widest focus:border-amber-400 outline-none bg-slate-50 shadow-inner font-black font-black font-black font-black font-black font-black" value={studentPasswordInput} onChange={e => setStudentPasswordInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleStudentVerify()} />
-                                            <button onClick={() => setShowStudentPwd(!showStudentPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-30 hover:opacity-100 font-black font-black font-black font-black font-black font-black font-black font-black"><Icon name={showStudentPwd ? "eye-off" : "eye"} className="font-black font-black font-black"/></button>
+                                    <div className="bg-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-200 relative overflow-hidden text-center border-t-8 border-amber-400 font-black font-black">
+                                        <div className="bg-amber-400 text-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg font-black font-black"><Icon name="key" className="w-8 h-8 font-black" /></div>
+                                        <h2 className="text-xl font-black mb-8 uppercase tracking-widest font-black">請輸入調查密碼</h2>
+                                        <div className="relative mb-6 font-black">
+                                            <input type={showStudentPwd ? "text" : "password"} placeholder="個案存取密碼" className="w-full border-2 border-slate-200 rounded-2xl px-6 py-4 text-center text-2xl font-black tracking-widest focus:border-amber-400 outline-none bg-slate-50 shadow-inner font-black" value={studentPasswordInput} onChange={e => setStudentPasswordInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleStudentVerify()} />
+                                            <button onClick={() => setShowStudentPwd(!showStudentPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-30 hover:opacity-100 font-black font-black font-black"><Icon name={showStudentPwd ? "eye-off" : "eye"} className="font-black" /></button>
                                         </div>
-                                        {studentPwdError && <p className="text-red-500 text-sm mb-8 font-black animate-bounce font-black font-black font-black font-black font-black font-black font-black font-black">{studentPwdError}</p>}
-                                        <div className="flex gap-4 font-black font-black font-black font-black font-black font-black">
-                                            <button onClick={() => setSelectedStudentId(null)} className="flex-1 py-4 opacity-30 font-black hover:opacity-100 transition-opacity font-black font-black font-black">返回列表</button>
-                                            <button onClick={handleStudentVerify} className="flex-1 bg-amber-400 text-white py-4 rounded-2xl shadow-xl active:scale-95 transition-all font-black font-black font-black font-black font-black font-black font-black font-black">驗證進入</button>
+                                        {studentPwdError && <p className="text-red-500 text-sm mb-8 font-black animate-bounce font-black">{studentPwdError}</p>}
+                                        <div className="flex gap-4 font-black">
+                                            <button onClick={() => setSelectedStudentId(null)} className="flex-1 py-4 opacity-30 font-black hover:opacity-100 transition-opacity font-black">返回列表</button>
+                                            <button onClick={handleStudentVerify} className="flex-1 bg-amber-400 text-white py-4 rounded-2xl shadow-xl active:scale-95 transition-all font-black font-black">驗證進入</button>
                                         </div>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="animate-fade-in font-black font-black font-black font-black font-black" key="view-details">
-                                    <header className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-8 border-b-[10px] border-b-slate-100 font-black mb-10 font-black font-black">
-                                        <div className="flex items-center gap-6 font-black font-black font-black font-black font-black font-black font-black">
-                                            <button onClick={()=>{setSelectedStudentId(null); setIsStudentAuthorized(false);}} className="p-4 bg-slate-50 hover:bg-slate-900 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90 font-black font-black font-black font-black font-black font-black font-black font-black"><Icon name="arrow-left" className="font-black font-black font-black font-black font-black" /></button>
-                                            <div font-black font-black font-black font-black><h2 className="text-5xl font-black uppercase tracking-tighter font-black font-black font-black font-black font-black font-black font-black font-black font-black">{currentMeeting?.studentName || "未命名"}</h2><p className="opacity-40 text-[10px] font-black uppercase tracking-[0.3em] mt-2 font-black font-black font-black font-black font-black font-black font-black font-black">負責老師：{currentMeeting?.manager}</p></div>
+                                <div className="animate-fade-in font-black font-black" key="view-details">
+                                    <header className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-center gap-8 border-b-[10px] border-b-slate-100 font-black mb-10 font-black">
+                                        <div className="flex items-center gap-6 font-black font-black font-black">
+                                            <button onClick={()=>{setSelectedStudentId(null); setIsStudentAuthorized(false);}} className="p-4 bg-slate-50 hover:bg-slate-900 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90 font-black font-black"><Icon name="arrow-left" className="font-black" /></button>
+                                            <div><h2 className="text-5xl font-black uppercase tracking-tighter font-black">{currentMeeting?.studentName || "未命名"}</h2><p className="opacity-40 text-[10px] font-black uppercase tracking-[0.3em] mt-2 font-black">負責老師：{currentMeeting?.manager}</p></div>
                                         </div>
-                                        <div className="flex flex-col sm:flex-row gap-6 no-print items-center font-black font-black font-black font-black font-black font-black font-black font-black font-black">
-                                            <div className="bg-slate-50 px-8 py-4 rounded-[30px] border-2 border-slate-200 shadow-inner flex gap-8 font-black font-black font-black font-black font-black font-black">
+                                        <div className="flex flex-col sm:flex-row gap-6 no-print items-center font-black">
+                                            <div className="bg-slate-50 px-8 py-4 rounded-[30px] border-2 border-slate-200 shadow-inner flex gap-8 font-black font-black">
                                                 {['physical', 'online'].map(m => (
-                                                    <label key={m} className="flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform font-black font-black font-black font-black font-black">
-                                                        <input type="checkbox" className="w-6 h-6 rounded-lg accent-blue-600 font-black font-black font-black font-black font-black font-black" disabled={(role==='parent' && currentMeeting.parentLocked)} checked={(currentMeeting.meetingModes || []).includes(m)} onChange={e=>{
+                                                    <label key={m} className="flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform font-black">
+                                                        <input type="checkbox" className="w-6 h-6 rounded-lg accent-blue-600 font-black" disabled={(role==='parent' && currentMeeting.parentLocked)} checked={(currentMeeting.meetingModes || []).includes(m)} onChange={e=>{
                                                             let modes = [...(currentMeeting.meetingModes || [])];
                                                             if(e.target.checked) modes.push(m); else modes = modes.filter(x=>x!==m);
                                                             updateMeetingField(currentMeeting.id, 'meetingModes', modes);
-                                                        }}/> <span className="uppercase text-xs tracking-widest font-black font-black font-black font-black font-black font-black">{m==='physical'?'實體出席':'線上會議'}</span>
+                                                        }}/> <span className="uppercase text-xs tracking-widest font-black font-black">{m==='physical'?'實體出席':'線上會議'}</span>
                                                     </label>
                                                 ))}
                                             </div>
-                                            {role === 'sped' && <div className="relative group font-black font-black font-black font-black font-black font-black font-black"><input placeholder="貼上視訊會議網址" className="border-2 border-slate-200 rounded-[30px] px-8 py-4 font-black shadow-inner focus:border-blue-600 outline-none min-w-[300px] bg-blue-50/50 font-black font-black font-black font-black font-black font-black font-black font-black" value={currentMeeting?.meetingLink || ''} onChange={e => updateMeetingField(currentMeeting.id, 'meetingLink', e.target.value)}/><div className="absolute -top-3 left-6 px-3 bg-white text-[9px] text-blue-600 font-black border-2 border-blue-100 rounded-full shadow-sm font-black font-black font-black font-black font-black font-black font-black font-black font-black">網址同步</div></div>}
+                                            {role === 'sped' && <div className="relative group font-black font-black font-black"><input placeholder="貼上視訊會議網址" className="border-2 border-slate-200 rounded-[30px] px-8 py-4 font-black shadow-inner focus:border-blue-600 outline-none min-w-[300px] bg-blue-50/50 font-black" value={currentMeeting?.meetingLink || ''} onChange={e => updateMeetingField(currentMeeting.id, 'meetingLink', e.target.value)}/><div className="absolute -top-3 left-6 px-3 bg-white text-[9px] text-blue-600 font-black border-2 border-blue-100 rounded-full shadow-sm font-black font-black">網址同步</div></div>}
                                         </div>
                                     </header>
 
-                                    {((currentMeeting?.meetingModes || []).includes('online') || (currentMeeting?.confirmedTime?.mode === 'online')) && currentMeeting?.meetingLink && (
-                                        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-[40px] flex items-center justify-between text-white shadow-2xl animate-fade-in font-black mb-10 font-black font-black font-black">
-                                            <div className="flex items-center gap-6 font-black font-black font-black font-black font-black"><div className="bg-white/20 p-5 rounded-3xl backdrop-blur-md shadow-inner"><Icon name="video" className="w-10 h-10" /></div><div><h4 className="text-2xl font-black font-black font-black font-black font-black">線上會議模式已啟動</h4><p className="text-sm opacity-60 tracking-wider">點擊右側按鈕進入專屬線上會議室</p></div></div>
-                                            <a href={currentMeeting.meetingLink.startsWith('http') ? currentMeeting.meetingLink : `https://${currentMeeting.meetingLink}`} target="_blank" className="bg-white text-blue-600 px-10 py-4 rounded-[25px] font-black hover:scale-105 transition-all shadow-xl active:scale-95 font-black uppercase tracking-widest font-black font-black font-black">進入視訊會議</a>
-                                        </div>
-                                    )}
-
-                                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-10 font-black font-black font-black font-black font-black">
-                                        <div className="lg:col-span-3 space-y-10 font-black font-black font-black font-black font-black font-black">
-                                            {role === 'teacher' && <div className="bg-amber-50 p-8 rounded-[40px] border-2 border-amber-200 shadow-sm font-black font-black font-black font-black font-black font-black"><label className="flex items-center gap-6 cursor-pointer text-amber-900 font-black font-black font-black font-black font-black font-black font-black"><input type="checkbox" className="w-10 h-10 accent-amber-600 shadow-sm font-black font-black font-black font-black font-black font-black font-black" checked={currentMeeting.teacherUnavailable || false} onChange={e=>updateMeetingField(currentMeeting.id,'teacherUnavailable',e.target.checked)}/><div><div className="text-xl font-black font-black font-black font-black font-black font-black font-black">目前課務繁忙，不克參與本案會議。</div><div className="text-[10px] opacity-60 uppercase tracking-[0.2em] mt-1 font-black font-black font-black font-black font-black font-black font-black">勾選後將同步知會個管老師進行排程協調。</div></div></label></div>}
-                                            <section className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm border-b-[20px] border-b-slate-50 font-black font-black font-black font-black font-black font-black">
-                                                <div className="flex justify-between items-center mb-10 font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black"><h3 className="font-black text-3xl flex items-center gap-4 text-blue-600 uppercase tracking-tighter font-black font-black font-black font-black font-black font-black font-black font-black font-black"><Icon name="calendar" className="w-8 h-8 font-black font-black font-black font-black font-black" /> 時間調查清單</h3>{role === 'parent' && ( currentMeeting.parentLocked ? <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',false)} className="px-8 py-3 bg-slate-100 rounded-2xl font-black text-xs text-slate-500 shadow-sm font-black font-black font-black font-black font-black font-black font-black">解鎖修改</button> : <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',true)} className="px-10 py-3 bg-emerald-500 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all text-xs uppercase font-black font-black font-black font-black font-black font-black font-black">確認提交並鎖定</button> )}</div>
+                                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-10 font-black font-black font-black">
+                                        <div className="lg:col-span-3 space-y-10 font-black font-black font-black">
+                                            {role === 'teacher' && <div className="bg-amber-50 p-8 rounded-[40px] border-2 border-amber-200 shadow-sm font-black font-black font-black"><label className="flex items-center gap-6 cursor-pointer text-amber-900 font-black font-black"><input type="checkbox" className="w-10 h-10 accent-amber-600 shadow-sm font-black font-black" checked={currentMeeting.teacherUnavailable || false} onChange={e=>updateMeetingField(currentMeeting.id,'teacherUnavailable',e.target.checked)}/><div><div className="text-xl font-black font-black">目前課務繁忙，不克參與本案會議。</div><div className="text-[10px] opacity-60 uppercase tracking-[0.2em] mt-1 font-black font-black">勾選後將同步知會個管老師進行排程協調。</div></div></label></div>}
+                                            <section className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm border-b-[20px] border-b-slate-50 font-black font-black">
+                                                <div className="flex justify-between items-center mb-10 font-black font-black font-black"><h3 className="font-black text-3xl flex items-center gap-4 text-blue-600 uppercase tracking-tighter font-black font-black"><Icon name="calendar" className="w-8 h-8 font-black" /> 時間調查清單</h3>{role === 'parent' && ( currentMeeting.parentLocked ? <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',false)} className="px-8 py-3 bg-slate-100 rounded-2xl font-black text-xs text-slate-500 shadow-sm font-black font-black">解鎖修改</button> : <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',true)} className="px-10 py-3 bg-emerald-500 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all text-xs uppercase font-black font-black">確認提交並鎖定</button> )}</div>
                                                 <Matrix mode={role === 'teacher' ? 'teacher' : 'general'} teacherName={currentMeeting?.manager || '李老師'} currentData={role === 'parent' ? (currentMeeting.parentPrefs || []) : (currentMeeting.teacherPrefs || [])} disabled={(currentMeeting.teacherUnavailable && role==='teacher') || (currentMeeting.parentLocked && role==='parent') || (currentMeeting.confirmedTime && role !== 'sped')} onToggle={handleTogglePreference} />
                                             </section>
-                                            <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm space-y-10 border-b-[20px] border-b-slate-50 font-black font-black font-black font-black font-black font-black">
-                                                {(role==='parent' || role==='sped') && <div className="space-y-4 font-black font-black font-black font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black font-black font-black font-black font-black font-black font-black">家長溝通與討論需求</h4><textarea disabled={currentMeeting.parentLocked && role==='parent'} value={localRemarks} onChange={e=>handleRemarksChange(e.target.value)} placeholder="針對孩子近期表現、需求或希望討論的重點..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black font-black font-black font-black font-black font-black font-black"/></div>}
-                                                {(role==='teacher' || role==='sped') && <div className="space-y-4 font-black font-black font-black font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black font-black font-black font-black font-black font-black">導師回饋與課務建議</h4><textarea value={localTeacherRemarks} onChange={e=>handleTeacherRemarksChange(e.target.value)} placeholder="如有需協調之課務安排 or 學生表現回饋..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black font-black font-black font-black font-black font-black font-black"/></div>}
+                                            <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm space-y-10 border-b-[20px] border-b-slate-50 font-black font-black">
+                                                {(role==='parent' || role==='sped') && <div className="space-y-4 font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black">家長溝通與討論需求</h4><textarea disabled={currentMeeting.parentLocked && role==='parent'} value={localRemarks} onChange={e=>handleRemarksChange(e.target.value)} placeholder="針對孩子近期表現、需求或希望討論的重點..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black"/></div>}
+                                                {(role==='teacher' || role==='sped') && <div className="space-y-4 font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black">導師回饋與課務建議</h4><textarea value={localTeacherRemarks} onChange={e=>handleTeacherRemarksChange(e.target.value)} placeholder="如有需協調之課務安排 or 學生表現回饋..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black"/></div>}
                                             </div>
                                         </div>
 
-                                        <aside className="font-black font-black font-black font-black font-black font-black font-black">
-                                            <div className="sticky-aside space-y-8 font-black font-black font-black font-black font-black font-black">
-                                                <div className="bg-slate-900 text-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-700 border-t-[10px] border-t-blue-600 font-black font-black font-black font-black font-black font-black font-black">
-                                                    <h3 className="text-xl font-black mb-12 text-yellow-400 uppercase tracking-[0.2em] border-b border-white/10 pb-4 font-black font-black font-black font-black font-black font-black font-black">排程定案狀態</h3>
+                                        <aside className="font-black font-black font-black font-black font-black font-black">
+                                            {/* 防遮擋固定側邊欄 */}
+                                            <div className="sticky-aside space-y-8 font-black font-black">
+                                                <div className="bg-slate-900 text-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-700 border-t-[10px] border-t-blue-600 font-black font-black">
+                                                    <h3 className="text-xl font-black mb-12 text-yellow-400 uppercase tracking-[0.2em] border-b border-white/10 pb-4 font-black font-black">排程定案狀態</h3>
                                                     {currentMeeting.confirmedTime ? ( 
-                                                        <div className="space-y-8 animate-fade-in font-black font-black font-black font-black font-black font-black font-black font-black">
-                                                            <div className="bg-emerald-500 p-10 rounded-[40px] text-center shadow-2xl border-b-[10px] border-b-emerald-800 font-black font-black font-black font-black font-black font-black font-black">
-                                                                <Icon name="check-circle" className="w-12 h-12 mx-auto mb-6 font-black font-black font-black font-black font-black font-black font-black font-black" />
-                                                                <div className="text-3xl font-black font-black font-black font-black font-black font-black font-black font-black">{formatDateLabel(currentMeeting.confirmedTime?.date)}</div>
-                                                                <div className="text-lg font-black opacity-80 mt-2 tracking-widest font-black font-black font-black font-black font-black font-black font-black font-black">{currentMeeting.confirmedTime?.slot}</div>
-                                                                <div className="mt-8 inline-block px-4 py-1.5 bg-white/20 rounded-full text-[10px] uppercase font-black font-black font-black font-black font-black font-black font-black">模式：{currentMeeting.confirmedTime.mode === 'physical' ? '實體出席' : '線上視訊'}</div>
+                                                        <div className="space-y-8 animate-fade-in font-black font-black font-black">
+                                                            <div className="bg-red-600 p-10 rounded-[40px] text-center shadow-2xl border-b-[10px] border-b-red-900 font-black font-black">
+                                                                <Icon name="check-circle" className="w-12 h-12 mx-auto mb-6" />
+                                                                <div className="text-3xl font-black font-black">{formatDateLabel(currentMeeting.confirmedTime?.date)}</div>
+                                                                <div className="text-lg font-black opacity-80 mt-2 tracking-widest font-black font-black">{currentMeeting.confirmedTime?.slot}</div>
+                                                                <div className="mt-8 inline-block px-4 py-1.5 bg-white/20 rounded-full text-[10px] uppercase font-black font-black">模式：{currentMeeting.confirmedTime.mode === 'physical' ? '實體出席' : '線上視訊'}</div>
                                                             </div>
                                                             {role === 'sped' && (
-                                                                <div className="space-y-6 pt-6 border-t border-white/10 font-black font-black font-black font-black font-black font-black font-black">
-                                                                    <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-3 block font-black font-black font-black font-black font-black">微調備註 (顯示於總表)</label>
-                                                                    <input type="text" className="w-full bg-white/5 border border-white/20 rounded-2xl px-6 py-4 text-sm font-black outline-none focus:border-blue-500 shadow-inner font-black font-black font-black font-black font-black font-black font-black" placeholder="如：延後10分鐘..." value={localConfirmedRemark} onChange={e=>handleConfirmedRemarkChange(e.target.value)}/>
-                                                                    <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', null)} className="w-full bg-rose-600/20 text-rose-400 py-4 rounded-2xl text-xs font-black border border-rose-600/40 active:scale-95 transition-all uppercase tracking-widest font-black font-black font-black font-black font-black font-black font-black">取消定案</button>
+                                                                <div className="space-y-6 pt-6 border-t border-white/10 font-black font-black">
+                                                                    <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-3 block font-black">微調備註 (顯示於總表)</label>
+                                                                    <input type="text" className="w-full bg-white/5 border border-white/20 rounded-2xl px-6 py-4 text-sm font-black outline-none focus:border-blue-500 shadow-inner font-black" placeholder="如：延後10分鐘..." value={localConfirmedRemark} onChange={e=>handleConfirmedRemarkChange(e.target.value)}/>
+                                                                    <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', null)} className="w-full bg-rose-600/20 text-rose-400 py-4 rounded-2xl text-xs font-black border border-rose-600/40 active:scale-95 transition-all uppercase tracking-widest font-black font-black">取消定案</button>
                                                                 </div>
                                                             )}
                                                         </div> 
                                                     ) : ( 
-                                                        <div className="space-y-8 font-black font-black font-black font-black font-black font-black font-black font-black">
+                                                        <div className="space-y-8 font-black font-black font-black">
                                                             {role === 'sped' && (
-                                                                <div className="bg-white/5 p-6 rounded-3xl border border-white/10 mb-2 shadow-inner font-black font-black font-black font-black font-black font-black font-black">
-                                                                    <p className="text-[10px] text-white/30 mb-4 uppercase tracking-widest font-black font-black font-black font-black font-black font-black font-black">定案模式</p>
-                                                                    <div className="flex gap-4 font-black font-black font-black font-black font-black font-black font-black">
-                                                                        {['physical', 'online'].map(m => ( <button key={m} onClick={()=>setTempConfirmedMode(m)} className={`flex-1 py-3 rounded-xl text-[10px] font-black transition-all border-2 font-black font-black font-black font-black font-black font-black font-black ${tempConfirmedMode===m?'bg-white text-black border-white shadow-xl font-black font-black font-black font-black':'border-white/10 text-white/30 font-black font-black font-black font-black'}`}>{m==='physical'?'實體':'線上'}</button> ))}
+                                                                <div className="bg-white/5 p-6 rounded-3xl border border-white/10 mb-2 shadow-inner font-black font-black">
+                                                                    <p className="text-[10px] text-white/30 mb-4 uppercase tracking-widest font-black font-black">定案模式</p>
+                                                                    <div className="flex gap-4 font-black font-black">
+                                                                        {['physical', 'online'].map(m => ( <button key={m} onClick={()=>setTempConfirmedMode(m)} className={`flex-1 py-3 rounded-xl text-[10px] font-black transition-all border-2 font-black font-black ${tempConfirmedMode===m?'bg-white text-black border-white shadow-xl font-black':'border-white/10 text-white/30 font-black'}`}>{m==='physical'?'實體':'線上'}</button> ))}
                                                                     </div>
                                                                 </div>
                                                             )}
                                                             {role === 'sped' ? (
                                                                 pendingSlot ? (
-                                                                    <div className="p-10 bg-amber-400/20 border-2 border-amber-400/40 rounded-[40px] text-center animate-fade-in shadow-inner font-black font-black font-black font-black font-black font-black font-black">
-                                                                        <p className="text-[10px] text-amber-400 mb-4 uppercase font-black font-black font-black font-black font-black font-black font-black">預選定案時間</p>
-                                                                        <div className="text-2xl font-black text-white font-black font-black font-black font-black font-black font-black font-black font-black font-black">{formatDateLabel(pendingSlot?.date)}</div>
-                                                                        <div className="text-lg font-black opacity-70 text-white mt-2 tracking-widest font-black font-black font-black font-black font-black font-black font-black font-black">{pendingSlot?.slot}</div>
-                                                                        <button onClick={() => updateMeetingField(currentMeeting.id, 'confirmedTime', { ...pendingSlot, mode: tempConfirmedMode })} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black shadow-xl active:scale-95 mt-8 uppercase text-xs tracking-widest font-black font-black font-black font-black font-black font-black font-black">確認正式定案</button>
-                                                                        <button onClick={()=>setPendingSlot(null)} className="text-[10px] text-white/30 mt-4 hover:text-white transition-colors underline block mx-auto font-black font-black font-black font-black font-black font-black font-black font-black font-black">取消預選</button>
+                                                                    <div className="p-10 bg-amber-400/20 border-2 border-amber-400/40 rounded-[40px] text-center animate-fade-in shadow-inner font-black font-black font-black">
+                                                                        <p className="text-[10px] text-amber-400 mb-4 uppercase font-black font-black font-black">預選定案時間</p>
+                                                                        <div className="text-2xl font-black text-white font-black font-black font-black">{formatDateLabel(pendingSlot?.date)}</div>
+                                                                        <div className="text-lg font-black opacity-70 text-white mt-2 tracking-widest font-black font-black font-black">{pendingSlot?.slot}</div>
+                                                                        <button onClick={() => updateMeetingField(currentMeeting.id, 'confirmedTime', { ...pendingSlot, mode: tempConfirmedMode })} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black shadow-xl active:scale-95 mt-8 uppercase text-xs tracking-widest font-black font-black font-black">確認正式定案</button>
+                                                                        <button onClick={()=>setPendingSlot(null)} className="text-[10px] text-white/30 mt-4 hover:text-white transition-colors underline block mx-auto font-black font-black font-black font-black">取消預選</button>
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="text-center py-20 opacity-10 font-black italic border-2 border-dashed border-white/10 rounded-[40px] font-black font-black font-black font-black font-black font-black">
-                                                                        <Icon name="mouse-pointer-2" className="w-12 h-12 mx-auto mb-6 font-black font-black font-black font-black font-black font-black font-black" />
-                                                                        <p className="text-xs uppercase font-black font-black font-black font-black font-black">點選左側矩陣定案</p>
+                                                                    <div className="text-center py-20 opacity-10 font-black italic border-2 border-dashed border-white/10 rounded-[40px] font-black font-black">
+                                                                        <Icon name="mouse-pointer-2" className="w-12 h-12 mx-auto mb-6 font-black font-black" />
+                                                                        <p className="text-xs uppercase font-black font-black">點選左側矩陣定案</p>
                                                                     </div>
                                                                 )
                                                             ) : (
-                                                                <div className="text-center py-20 opacity-20 font-black italic border-2 border-dashed border-white/20 rounded-[40px] font-black font-black font-black font-black font-black font-black font-black">
-                                                                    <Icon name="calendar-days" className="w-12 h-12 mx-auto mb-6 font-black font-black font-black font-black font-black font-black font-black" />
-                                                                    <p className="text-sm font-black uppercase tracking-widest font-black font-black font-black font-black font-black">等待特師定案中</p>
+                                                                <div className="text-center py-20 opacity-20 font-black italic border-2 border-dashed border-white/20 rounded-[40px] font-black font-black">
+                                                                    <Icon name="calendar-days" className="w-12 h-12 mx-auto mb-6 font-black font-black" />
+                                                                    <p className="text-sm font-black uppercase tracking-widest font-black font-black">等待特師定案中</p>
                                                                 </div>
                                                             )}
                                                         </div>
                                                     )}
                                                 </div>
-
-                                                <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm border-b-[10px] border-b-slate-100 font-black font-black font-black font-black font-black font-black">
-                                                    <h4 className="text-[10px] font-black text-slate-300 uppercase mb-6 tracking-[0.3em] border-b-2 border-slate-50 pb-4 font-black font-black font-black font-black">資料即時追蹤</h4>
-                                                    <div className="space-y-6 font-black text-sm font-black font-black font-black font-black font-black font-black">
-                                                        <div className="flex justify-between items-center font-black font-black font-black font-black font-black font-black"><span className="opacity-40 font-black font-black font-black font-black font-black">家長填報進度</span><span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black font-black font-black font-black ${currentMeeting.parentLocked ? "bg-emerald-100 text-emerald-700 font-black" : "bg-slate-100 text-slate-400 font-black"}`}>{currentMeeting.parentLocked ? "已提交" : "填寫中"}</span></div>
-                                                        <div className="flex justify-between items-center font-black font-black font-black font-black font-black font-black"><span className="opacity-40 font-black font-black font-black font-black font-black">導師回報進度</span><span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black font-black font-black font-black ${(currentMeeting.teacherPrefs?.length > 0 || currentMeeting.teacherUnavailable) ? "bg-emerald-100 text-emerald-700 font-black" : "bg-slate-100 text-slate-400 font-black"}`}>{currentMeeting.teacherUnavailable ? "不克出席" : (currentMeeting.teacherPrefs?.length > 0 ? "已同步" : "未填報")}</span></div>
+                                                <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm border-b-[10px] border-b-slate-100 font-black font-black">
+                                                    <h4 className="text-[10px] font-black text-slate-300 uppercase mb-6 tracking-[0.3em] border-b-2 border-slate-50 pb-4 font-black font-black">資料即時追蹤</h4>
+                                                    <div className="space-y-6 font-black text-sm font-black font-black font-black">
+                                                        <div className="flex justify-between items-center font-black font-black font-black"><span className="opacity-40 font-black font-black">家長填報進度</span><span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black ${currentMeeting.parentLocked ? "bg-emerald-100 text-emerald-700 font-black" : "bg-slate-100 text-slate-400 font-black"}`}>{currentMeeting.parentLocked ? "已提交" : "填寫中"}</span></div>
+                                                        <div className="flex justify-between items-center font-black font-black font-black"><span className="opacity-40 font-black font-black">導師回報進度</span><span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black ${(currentMeeting.teacherPrefs?.length > 0 || currentMeeting.teacherUnavailable) ? "bg-emerald-100 text-emerald-700 font-black" : "bg-slate-100 text-slate-400 font-black"}`}>{currentMeeting.teacherUnavailable ? "不克出席" : (currentMeeting.teacherPrefs?.length > 0 ? "已同步" : "未填報")}</span></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -783,16 +769,16 @@
                             )
                         )}
 
-                        <div className="mt-20 py-10 border-t-4 border-slate-200 text-center font-black font-black font-black">
-                            <div className="opacity-20 font-black text-4xl tracking-[0.5em] uppercase select-none font-black font-black font-black font-black">安東潛能班</div>
+                        <div className="mt-20 py-10 border-t-4 border-slate-200 text-center font-black font-black">
+                            <div className="opacity-20 font-black text-4xl tracking-[0.5em] uppercase select-none font-black font-black">安東潛能班</div>
                         </div>
                     </main>
 
                     <footer className="fixed bottom-0 left-0 right-0 p-6 pointer-events-none flex justify-end z-[60] no-print font-black font-black">
-                        <div className="bg-white/80 backdrop-blur-xl shadow-2xl border-2 border-slate-200 rounded-[30px] px-8 py-3 flex items-center gap-4 pointer-events-auto shadow-blue-900/10 font-black font-black font-black font-black">
-                            <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50 font-black font-black font-black font-black"></div>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] font-black font-black font-black font-black">
-                                {role} SESSION <span className="opacity-20 ml-2 font-black font-black font-black font-black">ID: {user?.uid?.substring(0, 8)}</span>
+                        <div className="bg-white/80 backdrop-blur-xl shadow-2xl border-2 border-slate-200 rounded-[30px] px-8 py-3 flex items-center gap-4 pointer-events-auto shadow-blue-900/10 font-black font-black">
+                            <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50 font-black font-black"></div>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] font-black font-black">
+                                {role} SESSION <span className="opacity-20 ml-2 font-black font-black">ID: {user?.uid?.substring(0, 8)}</span>
                             </span>
                         </div>
                     </footer>
