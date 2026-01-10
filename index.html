@@ -123,6 +123,7 @@
             remarks: '',
             teacherRemarks: '',
             teacherUnavailable: false,
+            parentUnavailable: false,
             parentLocked: false,
             confirmedTime: null,
             confirmedTimeRemark: ''
@@ -373,19 +374,18 @@
                                         const isPending = pendingSlot?.date === date && pendingSlot?.slot === slot.time;
                                         const isOccupied = meetings.some(m => m.id !== selectedStudentId && m.manager === teacherName && m.confirmedTime?.date === date && m.confirmedTime?.slot === slot.time);
 
-                                        // 核心顏色邏輯：三方同步可見
                                         const pPref = currentMeeting?.parentPrefs?.find(p => p.date === date && p.slot === slot.time);
                                         const tPref = currentMeeting?.teacherPrefs?.find(t => t.date === date && t.slot === slot.time);
 
                                         let bgColor = "bg-white";
                                         if (isConfirmed || isPending) {
-                                            bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100"; // 定案/預選：紅色
+                                            bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100"; 
                                         } else if (pPref && tPref) {
-                                            bgColor = "bg-orange-500 text-white"; // 重疊：橘色
+                                            bgColor = "bg-orange-500 text-white"; 
                                         } else if (tPref) {
-                                            bgColor = "bg-blue-500 text-white"; // 導師：藍色
+                                            bgColor = "bg-blue-500 text-white"; 
                                         } else if (pPref) {
-                                            bgColor = "bg-green-500 text-white"; // 家長：綠色
+                                            bgColor = "bg-green-500 text-white"; 
                                         } else if (isOccupied) {
                                             bgColor = "bg-slate-100 cursor-not-allowed opacity-50";
                                         } else if (!isAvail) {
@@ -484,7 +484,7 @@
                                             <div className="flex items-end font-black"><button onClick={() => { const n = document.getElementById('std-name'); const p = document.getElementById('std-pwd'); createStudent(n.value, p.value); n.value=''; p.value=''; }} className="w-full bg-blue-600 text-white h-14 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">建立個案檔案</button></div>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                                            {filteredMeetings.map(m => ( 
+                                            {filteredMeetings.map(m => ( 
                                                 <div key={m.id} className={`p-8 rounded-[40px] border-2 border-slate-200 transition-all relative shadow-sm ${m.confirmedTime ? 'bg-emerald-50 border-emerald-500' : 'bg-white hover:border-blue-200'}`}>
                                                     <div className="flex justify-between items-start mb-6">
                                                         <div className={`w-14 h-14 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner ${m.manager === '傅老師' ? 'bg-indigo-50 text-indigo-600 border-2 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-2 border-emerald-100'}`}>{m.studentName?.[0]}</div>
@@ -507,7 +507,7 @@
                                                             <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 text-sm font-black shadow-inner"><Icon name="key" className="w-4 h-4 opacity-20" /><span>{m.accessPassword}</span></div>
                                                         </>
                                                     )}
-                                                </div> 
+                                                </div> 
                                             ))}
                                         </div>
                                     </div>
@@ -530,7 +530,7 @@
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap gap-3 mb-10">
-                                            {(teacherConfigs[activeTeacher]?.dates || []).sort().map(d => ( 
+                                            {(teacherConfigs[activeTeacher]?.dates || []).sort().map(d => ( 
                                                 <div key={d} className="bg-blue-50 text-blue-700 px-5 py-3 rounded-2xl border-2 border-blue-100 flex items-center font-black text-xs shadow-sm hover:bg-white transition-colors">
                                                     {formatDateLabel(d)}
                                                     <button onClick={() => { 
@@ -539,7 +539,7 @@
                                                         const newSlots = (teacherConfigs[activeTeacher].slots || []).filter(x=>x.date!==d); 
                                                         setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', activeTeacher), { ...teacherConfigs[activeTeacher], dates: newDates, slots: newSlots });
                                                     }} className="ml-4 opacity-20 hover:opacity-100 hover:text-red-500 font-black"><Icon name="x" className="w-4 h-4 font-black" /></button>
-                                                </div> 
+                                                </div> 
                                             ))}
                                         </div>
                                         <Matrix mode="global" teacherName={activeTeacher} onToggle={(date, slot) => {
@@ -570,11 +570,12 @@
                                                 <tbody className="text-xl font-black">
                                                     {filteredMeetings.map(m => {
                                                         const hasT = m.teacherUnavailable || (m.teacherPrefs?.length > 0);
+                                                        const hasP = m.parentUnavailable || m.parentLocked;
                                                         return (
                                                             <tr key={m.id} className="border-b border-slate-100 h-28 hover:bg-slate-50/50 transition-colors font-black">
                                                                 <td className="px-8 text-2xl font-black">{m?.studentName || "未命名"}</td>
                                                                 <td className="px-4 text-center font-black">
-                                                                    <span className={`px-6 py-2.5 rounded-2xl text-lg shadow-sm font-black ${m.parentLocked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-30'}`}>{m.parentLocked ? '已提交' : '填寫中'}</span>
+                                                                    <span className={`px-6 py-2.5 rounded-2xl text-lg shadow-sm font-black ${hasP ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-30'}`}>{m.parentUnavailable ? '改提紙本' : (m.parentLocked ? '已提交' : '填寫中')}</span>
                                                                 </td>
                                                                 <td className="px-4 text-center font-black">
                                                                     <span className={`px-6 py-2.5 rounded-2xl text-lg shadow-sm font-black ${hasT ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 opacity-30'}`}>{m.teacherUnavailable ? '不克出席' : (m.teacherPrefs?.length > 0 ? '已填報' : '未填寫')}</span>
@@ -640,12 +641,12 @@
 
                         {(role === 'parent' || role === 'teacher') && !selectedStudentId && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10 animate-fade-in py-10 font-black" key="view-list">
-                                {meetings.map(m => ( 
+                                {meetings.map(m => ( 
                                     <div key={m.id} onClick={() => setSelectedStudentId(m.id)} className="p-12 bg-white rounded-[50px] border-2 border-slate-200 shadow-sm hover:shadow-2xl cursor-pointer group hover:border-blue-500 transition-all text-center border-b-[12px] border-b-transparent hover:border-b-blue-600 shadow-lg relative overflow-hidden font-black">
                                         <div className="w-24 h-24 bg-slate-50 text-slate-300 rounded-[35px] flex items-center justify-center mx-auto mb-8 font-black text-4xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">{m?.studentName?.[0]}</div>
                                         <h3 className="text-3xl font-black mb-4 font-black">{m?.studentName || "未命名"}</h3>
                                         <p className="text-blue-600 font-black text-sm flex items-center justify-center gap-2 uppercase tracking-widest font-black opacity-60 group-hover:opacity-100">進入調查填報 <Icon name="chevron-right" className="w-5 h-5 font-black" /></p>
-                                    </div> 
+                                    </div> 
                                 ))}
                             </div>
                         )}
@@ -678,7 +679,7 @@
                                             <div className="bg-slate-50 px-8 py-4 rounded-[30px] border-2 border-slate-200 shadow-inner flex gap-8 font-black">
                                                 {['physical', 'online'].map(m => (
                                                     <label key={m} className="flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform font-black">
-                                                        <input type="checkbox" className="w-6 h-6 rounded-lg accent-blue-600 font-black font-black" disabled={(role==='parent' && currentMeeting.parentLocked)} checked={(currentMeeting.meetingModes || []).includes(m)} onChange={e=>{
+                                                        <input type="checkbox" className="w-6 h-6 rounded-lg accent-blue-600 font-black font-black" disabled={((role==='parent' && currentMeeting.parentLocked) || (role==='parent' && currentMeeting.parentUnavailable))} checked={(currentMeeting.meetingModes || []).includes(m)} onChange={e=>{
                                                             let modes = [...(currentMeeting.meetingModes || [])];
                                                             if(e.target.checked) modes.push(m); else modes = modes.filter(x=>x!==m);
                                                             updateMeetingField(currentMeeting.id, 'meetingModes', modes);
@@ -692,7 +693,12 @@
 
                                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-10 font-black font-black">
                                         <div className="lg:col-span-3 space-y-10 font-black font-black">
+                                            {/* 導師端不克出席 */}
                                             {role === 'teacher' && <div className="bg-amber-50 p-8 rounded-[40px] border-2 border-amber-200 shadow-sm font-black font-black"><label className="flex items-center gap-6 cursor-pointer text-amber-900 font-black font-black"><input type="checkbox" className="w-10 h-10 accent-amber-600 shadow-sm font-black font-black" checked={currentMeeting.teacherUnavailable || false} onChange={e=>updateMeetingField(currentMeeting.id,'teacherUnavailable',e.target.checked)}/><div><div className="text-xl font-black font-black">目前課務繁忙，不克參與本案會議。</div><div className="text-[10px] opacity-60 uppercase tracking-[0.2em] mt-1 font-black font-black">勾選後將同步知會個管老師進行排程協調。</div></div></label></div>}
+                                            
+                                            {/* 家長端不克出席 */}
+                                            {role === 'parent' && <div className="bg-blue-50 p-8 rounded-[40px] border-2 border-blue-200 shadow-sm font-black font-black"><label className="flex items-center gap-6 cursor-pointer text-blue-900 font-black font-black"><input type="checkbox" className="w-10 h-10 accent-blue-600 shadow-sm font-black font-black" checked={currentMeeting.parentUnavailable || false} onChange={e=>updateMeetingField(currentMeeting.id,'parentUnavailable',e.target.checked)}/><div><div className="text-xl font-black font-black">因事務繁忙不克出席，改以紙本資料提供，並同意老師後續聯繫溝通。</div><div className="text-[10px] opacity-60 uppercase tracking-[0.2em] mt-1 font-black font-black">勾選後將鎖定時間填寫，並通知老師改由紙本通訊處理。</div></div></label></div>}
+
                                             <section className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm border-b-[20px] border-b-slate-50 font-black font-black">
                                                 <div className="flex justify-between items-center mb-10 font-black font-black">
                                                     <div className="flex flex-col gap-2">
@@ -704,12 +710,12 @@
                                                             <div className="flex items-center gap-1.5"><div className="w-4 h-4 bg-red-600 rounded shadow-sm"></div><span className="text-xs opacity-60">最終定案</span></div>
                                                         </div>
                                                     </div>
-                                                    {role === 'parent' && ( currentMeeting.parentLocked ? <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',false)} className="px-8 py-3 bg-slate-100 rounded-2xl font-black text-xs text-slate-500 shadow-sm font-black font-black">解鎖修改</button> : <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',true)} className="px-10 py-3 bg-emerald-500 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all text-xs uppercase font-black font-black">確認提交並鎖定</button> )}
+                                                    {role === 'parent' && ( (currentMeeting.parentLocked || currentMeeting.parentUnavailable) ? <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',false)} className="px-8 py-3 bg-slate-100 rounded-2xl font-black text-xs text-slate-500 shadow-sm font-black font-black">解鎖修改</button> : <button onClick={()=>updateMeetingField(currentMeeting.id,'parentLocked',true)} className="px-10 py-3 bg-emerald-500 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all text-xs uppercase font-black font-black">確認提交並鎖定</button> )}
                                                 </div>
-                                                <Matrix teacherName={currentMeeting?.manager || '李老師'} currentData={role === 'parent' ? (currentMeeting.parentPrefs || []) : (currentMeeting.teacherPrefs || [])} disabled={(currentMeeting.teacherUnavailable && role==='teacher') || (currentMeeting.parentLocked && role==='parent') || (currentMeeting.confirmedTime && role !== 'sped')} onToggle={handleTogglePreference} />
+                                                <Matrix teacherName={currentMeeting?.manager || '李老師'} currentData={role === 'parent' ? (currentMeeting.parentPrefs || []) : (currentMeeting.teacherPrefs || [])} disabled={(currentMeeting.teacherUnavailable && role==='teacher') || (currentMeeting.parentUnavailable && role==='parent') || (currentMeeting.parentLocked && role==='parent') || (currentMeeting.confirmedTime && role !== 'sped')} onToggle={handleTogglePreference} />
                                             </section>
                                             <div className="bg-white p-10 rounded-[50px] border-2 border-slate-200 shadow-sm space-y-10 border-b-[20px] border-b-slate-50 font-black font-black">
-                                                {(role==='parent' || role==='sped') && <div className="space-y-4 font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black font-black">家長溝通與討論需求</h4><textarea disabled={currentMeeting.parentLocked && role==='parent'} value={localRemarks} onChange={e=>handleRemarksChange(e.target.value)} placeholder="針對孩子近期表現、需求或希望討論的重點..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black font-black"/></div>}
+                                                {(role==='parent' || role==='sped') && <div className="space-y-4 font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black font-black">家長溝通與討論需求</h4><textarea disabled={(currentMeeting.parentLocked || currentMeeting.parentUnavailable) && role==='parent'} value={localRemarks} onChange={e=>handleRemarksChange(e.target.value)} placeholder="針對孩子近期表現、需求或希望討論的重點..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black font-black"/></div>}
                                                 {(role==='teacher' || role==='sped') && <div className="space-y-4 font-black font-black font-black"><h4 className="font-black mb-3 uppercase tracking-[0.3em] text-slate-300 text-[10px] font-black font-black font-black">導師回饋與課務建議</h4><textarea value={localTeacherRemarks} onChange={e=>handleTeacherRemarksChange(e.target.value)} placeholder="如有需協調之課務安排 or 學生表現回饋..." className="w-full border-2 border-slate-200 rounded-[30px] p-8 min-h-[180px] font-black shadow-inner outline-none focus:border-blue-500 bg-slate-50 transition-all text-lg font-black font-black font-black"/></div>}
                                             </div>
                                         </div>
@@ -718,7 +724,7 @@
                                             <div className="sticky-aside space-y-8 font-black font-black font-black">
                                                 <div className="bg-slate-900 text-white p-10 rounded-[50px] shadow-2xl border-2 border-slate-700 border-t-[10px] border-t-blue-600 font-black font-black font-black">
                                                     <h3 className="text-xl font-black mb-12 text-yellow-400 uppercase tracking-[0.2em] border-b border-white/10 pb-4 font-black font-black font-black">排程定案狀態</h3>
-                                                    {currentMeeting.confirmedTime ? ( 
+                                                    {currentMeeting.confirmedTime ? ( 
                                                         <div className="space-y-8 animate-fade-in font-black font-black font-black font-black">
                                                             <div className="bg-red-600 p-10 rounded-[40px] text-center shadow-2xl border-b-[10px] border-b-red-900 font-black font-black font-black">
                                                                 <Icon name="check-circle" className="w-12 h-12 mx-auto mb-6 font-black font-black font-black font-black" />
@@ -733,8 +739,8 @@
                                                                     <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', null)} className="w-full bg-rose-600/20 text-rose-400 py-4 rounded-2xl text-xs font-black border border-rose-600/40 active:scale-95 transition-all uppercase tracking-widest font-black font-black font-black font-black">取消定案</button>
                                                                 </div>
                                                             )}
-                                                        </div> 
-                                                    ) : ( 
+                                                        </div> 
+                                                    ) : ( 
                                                         <div className="space-y-8 font-black font-black font-black font-black">
                                                             {role === 'sped' && (
                                                                 <div className="bg-white/5 p-6 rounded-3xl border border-white/10 mb-2 shadow-inner font-black font-black font-black font-black">
@@ -771,8 +777,18 @@
                                                 <div className="bg-white p-8 rounded-[40px] border-2 border-slate-200 shadow-sm border-b-[10px] border-b-slate-100 font-black font-black font-black font-black">
                                                     <h4 className="text-[10px] font-black text-slate-300 uppercase mb-6 tracking-[0.3em] border-b-2 border-slate-50 pb-4 font-black font-black font-black">資料即時追蹤</h4>
                                                     <div className="space-y-6 font-black text-sm font-black font-black font-black font-black font-black">
-                                                        <div className="flex justify-between items-center font-black font-black font-black font-black font-black font-black"><span className="opacity-40 font-black font-black font-black font-black font-black font-black font-black">家長填報進度</span><span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black font-black font-black font-black font-black ${currentMeeting.parentLocked ? "bg-emerald-100 text-emerald-700 font-black" : "bg-slate-100 text-slate-400 font-black font-black font-black font-black"}`}>{currentMeeting.parentLocked ? "已提交" : "填寫中"}</span></div>
-                                                        <div className="flex justify-between items-center font-black font-black font-black font-black font-black font-black"><span className="opacity-40 font-black font-black font-black font-black font-black font-black font-black font-black">導師回報進度</span><span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black ${(currentMeeting.teacherPrefs?.length > 0 || currentMeeting.teacherUnavailable) ? "bg-emerald-100 text-emerald-700 font-black font-black font-black font-black" : "bg-slate-100 text-slate-400 font-black font-black font-black font-black font-black font-black"}`}>{currentMeeting.teacherUnavailable ? "不克出席" : (currentMeeting.teacherPrefs?.length > 0 ? "已同步" : "未填報")}</span></div>
+                                                        <div className="flex justify-between items-center font-black font-black font-black font-black font-black font-black">
+                                                            <span className="opacity-40 font-black font-black font-black font-black font-black font-black font-black">家長填報進度</span>
+                                                            <span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black font-black font-black font-black font-black ${ (currentMeeting.parentLocked || currentMeeting.parentUnavailable) ? "bg-emerald-100 text-emerald-700 font-black" : "bg-slate-100 text-slate-400 font-black font-black font-black font-black"}`}>
+                                                                {currentMeeting.parentUnavailable ? "改提紙本" : (currentMeeting.parentLocked ? "已提交" : "填寫中")}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex justify-between items-center font-black font-black font-black font-black font-black font-black">
+                                                            <span className="opacity-40 font-black font-black font-black font-black font-black font-black font-black font-black">導師回報進度</span>
+                                                            <span className={`px-4 py-1 rounded-xl text-[10px] shadow-sm font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black font-black ${(currentMeeting.teacherPrefs?.length > 0 || currentMeeting.teacherUnavailable) ? "bg-emerald-100 text-emerald-700 font-black font-black font-black font-black" : "bg-slate-100 text-slate-400 font-black font-black font-black font-black font-black font-black"}`}>
+                                                                {currentMeeting.teacherUnavailable ? "不克出席" : (currentMeeting.teacherPrefs?.length > 0 ? "已同步" : "未填報")}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -786,15 +802,6 @@
                             <div className="opacity-20 font-black text-4xl tracking-[0.5em] uppercase select-none font-black font-black font-black font-black font-black font-black font-black">安東潛能班</div>
                         </div>
                     </main>
-
-                    <footer className="fixed bottom-0 left-0 right-0 p-6 pointer-events-none flex justify-end z-[60] no-print font-black font-black font-black font-black">
-                        <div className="bg-white/80 backdrop-blur-xl shadow-2xl border-2 border-slate-200 rounded-[30px] px-8 py-3 flex items-center gap-4 pointer-events-auto shadow-blue-900/10 font-black font-black font-black font-black font-black font-black font-black font-black">
-                            <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50 font-black font-black font-black font-black font-black font-black font-black font-black"></div>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] font-black font-black font-black font-black font-black font-black font-black font-black">
-                                {role} SESSION <span className="opacity-20 ml-2 font-black font-black font-black font-black font-black font-black font-black font-black">ID: {user?.uid?.substring(0, 8)}</span>
-                            </span>
-                        </div>
-                    </footer>
                 </div>
             );
         };
