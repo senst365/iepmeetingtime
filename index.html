@@ -278,6 +278,10 @@
 
             const handleTogglePreference = (date, slot) => {
                 if (!currentMeeting || !selectedStudentId) return;
+
+                // 新增修正：若已經定案，禁止點擊（除了特師端的 global 模式）
+                if (currentMeeting.confirmedTime && role !== 'sped') return;
+                if (currentMeeting.confirmedTime && role === 'sped' && spedTab !== 'schedule') return;
                 
                 const config = teacherConfigs[currentMeeting.manager] || { slots: [] };
                 const isAvail = config.slots?.some(s => s.date === date && s.slot === slot);
@@ -287,6 +291,8 @@
                 if (isOccupied) return;
 
                 if (role === 'sped') {
+                    // 若特師已定案且在個案詳情頁面，禁止再次選擇 pending
+                    if (currentMeeting.confirmedTime) return;
                     setPendingSlot({ date, slot });
                     return;
                 }
@@ -379,10 +385,13 @@
             const handleStudentVerify = () => studentPasswordInput === currentMeeting?.accessPassword ? (setIsStudentAuthorized(true), setStudentPwdError('')) : setStudentPwdError('密碼不正確');
 
             const Matrix = ({ teacherName, onToggle, disabled = false, mode = 'case' }) => {
-                const [isFixed, setIsFixed] = useState(false); // 控制時段欄是否固定
+                const [isFixed, setIsFixed] = useState(false);
                 const config = teacherConfigs[teacherName] || { dates: [], slots: [] };
                 if (!config.dates?.length) return <div className="p-10 text-center text-slate-400 border-2 border-dashed rounded-3xl font-black">尚未設定開放日期</div>;
                 const sortedDates = [...config.dates].sort();
+
+                // 修正：判斷此個案是否已經定案
+                const isCaseConfirmed = currentMeeting?.confirmedTime != null;
 
                 return (
                     <div className="space-y-3">
@@ -420,8 +429,10 @@
 
                                             let bgColor = "bg-white";
                                             let showCheck = false;
+                                            let canClick = false;
 
                                             if (mode === 'global') {
+                                                canClick = true;
                                                 if (isAvail) {
                                                     bgColor = "bg-yellow-400 shadow-inner";
                                                     showCheck = true;
@@ -429,6 +440,9 @@
                                                     bgColor = "bg-white hover:bg-yellow-50";
                                                 }
                                             } else {
+                                                // 修正邏輯：若已定案，除了紅色那一格，其餘皆不可點擊
+                                                canClick = isAvail && !isCaseConfirmed;
+                                                
                                                 if (isConfirmed || isPending) {
                                                     bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100"; 
                                                 } else if (pPref && tPref) {
@@ -446,8 +460,8 @@
 
                                             return (
                                                 <td key={`${date}-${slot.time}`} 
-                                                    onClick={() => (mode === 'global' || isAvail) && onToggle(date, slot.time)} 
-                                                    className={`p-4 border-r border-slate-200 last:border-0 h-20 transition-all relative ${(mode === 'global' || isAvail) ? 'cursor-pointer hover:opacity-80' : 'cursor-not-allowed'} ${bgColor}`}>
+                                                    onClick={() => canClick && onToggle(date, slot.time)} 
+                                                    className={`p-4 border-r border-slate-200 last:border-0 h-20 transition-all relative ${canClick ? 'cursor-pointer hover:opacity-80' : 'cursor-not-allowed opacity-60'} ${bgColor}`}>
                                                     {(isConfirmed || isPending || (mode === 'global' && showCheck)) && <Icon name="check-circle" className={`w-6 h-6 mx-auto ${mode === 'global' ? 'text-yellow-800' : ''}`} />}
                                                     {isOccupied && !isConfirmed && mode !== 'global' && <div className="text-[10px] text-white bg-black/30 px-1 py-0.5 rounded font-black">他案定案</div>}
                                                     {pPref && !isConfirmed && !isPending && mode !== 'global' && (
