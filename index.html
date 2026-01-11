@@ -279,7 +279,6 @@
             const handleTogglePreference = (date, slot) => {
                 if (!currentMeeting || !selectedStudentId) return;
                 
-                // 若此時段在老師的 config 中不開放，除了 sped 管理模式外其餘禁止點擊
                 const config = teacherConfigs[currentMeeting.manager] || { slots: [] };
                 const isAvail = config.slots?.some(s => s.date === date && s.slot === slot);
                 if (!isAvail && role !== 'sped') return;
@@ -386,11 +385,18 @@
 
                 return (
                     <div className={`overflow-x-auto border-2 border-slate-200 rounded-3xl bg-white shadow-sm ${disabled ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-                        <table className="w-full min-w-[500px] text-center">
-                            <thead><tr className="bg-slate-100 border-b-2 border-slate-200"><th className="p-4 border-r-2 border-slate-200 w-40 uppercase text-xs font-black">時段</th>{sortedDates.map(d => <th key={d} className="p-4 font-black whitespace-nowrap">{formatDateLabel(d)}</th>)}</tr></thead>
+                        <table className="w-full min-w-[600px] text-center table-fixed border-collapse">
+                            <thead>
+                                <tr className="bg-slate-100 border-b-2 border-slate-200">
+                                    {/* 固定首欄表頭 */}
+                                    <th className="p-4 w-40 uppercase text-xs font-black sticky left-0 z-30 bg-slate-100 border-r-2 border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">時段</th>
+                                    {sortedDates.map(d => <th key={d} className="p-4 w-32 font-black whitespace-nowrap">{formatDateLabel(d)}</th>)}
+                                </tr>
+                            </thead>
                             <tbody>{TIME_SLOTS.map(slot => (
                                 <tr key={slot.time} className="border-b border-slate-200 hover:bg-slate-50 transition-colors font-black">
-                                    <td className="p-4 border-r-2 border-slate-200 bg-slate-50 text-xs font-black text-slate-600 leading-tight">
+                                    {/* 固定首欄內容 */}
+                                    <td className="p-4 sticky left-0 z-20 bg-slate-50 text-xs font-black text-slate-600 leading-tight border-r-2 border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                         <div className="text-blue-600 mb-1">{slot.label}</div>
                                         <div className="opacity-40 font-normal">{slot.time}</div>
                                     </td>
@@ -407,7 +413,6 @@
                                         let showCheck = false;
 
                                         if (mode === 'global') {
-                                            // 特師排程管理模式：黃色勾選
                                             if (isAvail) {
                                                 bgColor = "bg-yellow-400 shadow-inner";
                                                 showCheck = true;
@@ -415,7 +420,6 @@
                                                 bgColor = "bg-white hover:bg-yellow-50";
                                             }
                                         } else {
-                                            // 一般個案填報模式
                                             if (isConfirmed || isPending) {
                                                 bgColor = "bg-red-600 text-white shadow-md ring-4 ring-red-100"; 
                                             } else if (pPref && tPref) {
@@ -427,7 +431,6 @@
                                             } else if (isOccupied) {
                                                 bgColor = "bg-slate-100 cursor-not-allowed opacity-50";
                                             } else if (!isAvail) {
-                                                // 未開放時段：灰色斜線底
                                                 bgColor = "bg-slash";
                                             }
                                         }
@@ -601,8 +604,6 @@
                                                             </div> 
                                                         ))}
                                                     </div>
-                                                    
-                                                    {/* 此處 mode 為 global，特師在此可以勾選/取消開放時段 */}
                                                     <Matrix mode="global" teacherName={activeTeacher} onToggle={(date, slot) => {
                                                         const { db, appId, setDoc, doc } = window.IEP_FIREBASE;
                                                         const s = [...(teacherConfigs[activeTeacher]?.slots || [])];
@@ -672,7 +673,7 @@
                                             <table className="w-full border-collapse border-2 border-slate-200 font-black">
                                                 <thead>
                                                     <tr className="bg-slate-50 h-24 font-black">
-                                                        <th className="p-4 border-2 border-slate-200 font-black opacity-40 uppercase text-2xl w-48 font-black font-black">時段</th>
+                                                        <th className="p-4 border-2 border-slate-200 font-black opacity-40 uppercase text-2xl w-48 font-black font-black sticky left-0 z-30 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">時段</th>
                                                         {Array.from(new Set([...(teacherConfigs["李老師"]?.dates || []), ...(teacherConfigs["傅老師"]?.dates || [])])).filter(d=>!!d).sort().map(d => ( 
                                                             <th key={d} className="p-4 border-2 border-slate-200 text-slate-800 font-black text-2xl whitespace-nowrap">{formatDateLabel(d)}</th> 
                                                         ))}
@@ -681,7 +682,7 @@
                                                 <tbody className="font-black text-xl">
                                                     {TIME_SLOTS.map(slot => ( 
                                                         <tr key={slot.time} className="h-32 hover:bg-slate-50/20 transition-colors font-black">
-                                                            <td className="p-3 border-2 border-slate-200 text-2xl bg-slate-50 font-black text-center leading-tight">
+                                                            <td className="p-3 border-2 border-slate-200 text-2xl bg-slate-50 font-black text-center leading-tight sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                                                 <div className="text-blue-600 mb-1 font-black">{slot.label}</div>
                                                                 <div className="text-sm font-normal opacity-50 font-black">{slot.time}</div>
                                                             </td>
