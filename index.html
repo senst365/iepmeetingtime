@@ -279,7 +279,6 @@
             const handleTogglePreference = (date, slot) => {
                 if (!currentMeeting || !selectedStudentId) return;
 
-                // 新增修正：若已經定案，禁止點擊（除了特師端的 global 模式）
                 if (currentMeeting.confirmedTime && role !== 'sped') return;
                 if (currentMeeting.confirmedTime && role === 'sped' && spedTab !== 'schedule') return;
                 
@@ -291,7 +290,6 @@
                 if (isOccupied) return;
 
                 if (role === 'sped') {
-                    // 若特師已定案且在個案詳情頁面，禁止再次選擇 pending
                     if (currentMeeting.confirmedTime) return;
                     setPendingSlot({ date, slot });
                     return;
@@ -390,7 +388,6 @@
                 if (!config.dates?.length) return <div className="p-10 text-center text-slate-400 border-2 border-dashed rounded-3xl font-black">尚未設定開放日期</div>;
                 const sortedDates = [...config.dates].sort();
 
-                // 修正：判斷此個案是否已經定案
                 const isCaseConfirmed = currentMeeting?.confirmedTime != null;
 
                 return (
@@ -440,7 +437,6 @@
                                                     bgColor = "bg-white hover:bg-yellow-50";
                                                 }
                                             } else {
-                                                // 修正邏輯：若已定案，除了紅色那一格，其餘皆不可點擊
                                                 canClick = isAvail && !isCaseConfirmed;
                                                 
                                                 if (isConfirmed || isPending) {
@@ -841,9 +837,20 @@
                                                                 <div className="text-lg font-black opacity-80 mt-2 tracking-widest font-black font-black font-black font-black font-black">{currentMeeting.confirmedTime?.slot}</div>
                                                                 <div className="mt-8 inline-block px-4 py-1.5 bg-white/20 rounded-full text-[10px] uppercase font-black font-black font-black font-black font-black">模式：{currentMeeting.confirmedTime.mode === 'physical' ? '實體出席' : '線上視訊'}</div>
                                                             </div>
+                                                            
+                                                            {/* 這裡新增：讓家長與導師也能看到微調備註 */}
+                                                            {role !== 'sped' && currentMeeting.confirmedTimeRemark && (
+                                                                <div className="bg-white/5 p-6 rounded-3xl border border-white/10 animate-fade-in">
+                                                                    <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-2 block">特師微調備註</label>
+                                                                    <p className="text-sm text-white/80 leading-relaxed font-normal italic">
+                                                                        {currentMeeting.confirmedTimeRemark}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+
                                                             {role === 'sped' && (
                                                                 <div className="space-y-6 pt-6 border-t border-white/10 font-black font-black font-black font-black">
-                                                                    <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-3 block font-black font-black font-black">微調備註 (顯示於總表)</label>
+                                                                    <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-3 block font-black font-black font-black">微調備註 (顯示於總表與親師端)</label>
                                                                     <input type="text" className="w-full bg-white/5 border border-white/20 rounded-2xl px-6 py-4 text-sm font-black outline-none focus:border-blue-500 shadow-inner font-black font-black font-black font-black" placeholder="如：延後10分鐘..." value={localConfirmedRemark} onChange={e=>handleConfirmedRemarkChange(e.target.value)}/>
                                                                     <button onClick={()=>updateMeetingField(currentMeeting.id, 'confirmedTime', null)} className="w-full bg-rose-600/20 text-rose-400 py-4 rounded-2xl text-xs font-black border border-rose-600/40 active:scale-95 transition-all uppercase tracking-widest font-black font-black font-black font-black">取消定案</button>
                                                                 </div>
