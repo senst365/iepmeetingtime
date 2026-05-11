@@ -55,28 +55,52 @@
     <div id="root"></div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, query, getDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const myFirebaseConfig = {
-            apiKey: "AIzaSyBirOQwZgEs-G1F8diLxjqv9Q-RQu72ZJ4",
+        // =========================================================================
+        // 【重要】部屬設定區 (Deployment Configuration)
+        // 已經填入您的專屬 Firebase 設定
+        // =========================================================================
+        const manualConfig = {
+            apiKey: "AIzaSyDeEIgQ2FIYgRKThXu4fxEVOLgrFEZNvic",
             authDomain: "iep-meeting-time.firebaseapp.com",
             projectId: "iep-meeting-time",
             storageBucket: "iep-meeting-time.firebasestorage.app",
             messagingSenderId: "859481078114",
-            appId: "1:859481078114:web:6e2779f007ecb7a9c7143b",
-            measurementId: "G-LB9T9HZKF9"
+            appId: "1:859481078114:web:8698dc8e806999f0c7143b",
+            measurementId: "G-FLFY2BHWT4"
         };
 
-        const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : myFirebaseConfig;
-        const app = initializeApp(config);
+        // 系統邏輯：
+        // 1. 如果在 Canvas 環境 (typeof __firebase_config !== 'undefined')，優先使用 Canvas 的環境變數 (讓您現在能預覽)。
+        // 2. 如果在 GitHub/Netlify (canvas 變數不存在)，且 manualConfig 的 apiKey 已經填寫，則使用 manualConfig。
+        // 3. 如果都沒填，則使用預設值 (會報錯)。
+        
+        let firebaseConfig;
+        let appIdStr = 'iep-meeting-time';
+
+        if (typeof __firebase_config !== 'undefined') {
+            // Canvas 環境
+            firebaseConfig = JSON.parse(__firebase_config);
+            if (typeof __app_id !== 'undefined') appIdStr = __app_id;
+        } else if (manualConfig.apiKey && manualConfig.apiKey !== "請在此填入您的_API_KEY") {
+            // 您已手動填寫設定 (部署環境)
+            firebaseConfig = manualConfig;
+        } else {
+            // 未填寫設定的 fallback
+            console.warn("尚未填寫 Firebase 設定！請在程式碼中填入 manualConfig");
+            firebaseConfig = { apiKey: "demo-key" }; 
+        }
+
+        const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'iep-meeting-time';
 
+        // 將 Firebase 實例掛載到 window 以便 React 元件存取
         window.IEP_FIREBASE = { 
-            auth, db, appId, 
+            auth, db, appId: appIdStr, 
             collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, addDoc, query, getDoc, 
             signInAnonymously, onAuthStateChanged, signInWithCustomToken 
         };
@@ -146,6 +170,9 @@
             const [editName, setEditName] = useState('');
             const [editPwd, setEditPwd] = useState('');
             const [editManager, setEditManager] = useState('李老師');
+
+            // 新增：刪除確認狀態
+            const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
             const [password, setPassword] = useState('');
             const [isAuth, setIsAuth] = useState(false);
@@ -335,12 +362,13 @@
                 } catch (e) { console.error("Create Case Error:", e); }
             };
 
-            const deleteStudent = async (id) => {
-                if (!fbReady || !window.IEP_FIREBASE) return;
-                if (!window.confirm("確定要永久刪除此個案資料嗎？")) return;
+            // 改為實際執行刪除的函數，不依賴 window.confirm
+            const confirmDeleteStudent = async () => {
+                if (!deleteConfirmId || !window.IEP_FIREBASE) return;
                 const { db, appId, deleteDoc, doc } = window.IEP_FIREBASE;
                 try {
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', id));
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'iep_meetings', deleteConfirmId));
+                    setDeleteConfirmId(null); // 關閉彈窗
                 } catch (e) { console.error("Delete Case Error:", e); }
             };
 
@@ -480,6 +508,23 @@
 
             return (
                 <div className="min-h-screen pb-20 font-black">
+                    {/* 刪除確認 Modal */}
+                    {deleteConfirmId && (
+                        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 animate-fade-in no-print">
+                            <div className="bg-white rounded-[30px] p-8 max-w-sm w-full shadow-2xl border-2 border-slate-200">
+                                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <Icon name="alert-triangle" className="w-8 h-8" />
+                                </div>
+                                <h3 className="text-xl font-black text-center mb-2">確認刪除個案？</h3>
+                                <p className="text-center text-slate-500 text-sm mb-8 font-black opacity-60">此動作無法復原，該學生的所有排程與資料將會永久移除。</p>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setDeleteConfirmId(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black hover:bg-slate-200 transition-colors">取消</button>
+                                    <button onClick={confirmDeleteStudent} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black shadow-lg hover:bg-red-700 transition-colors">確認刪除</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <nav className="bg-white border-b-2 border-slate-200 sticky top-0 z-50 px-4 md:px-8 h-20 flex items-center justify-between shadow-sm no-print font-black">
                         <div className="flex items-center gap-4">
                             <button onClick={resetToHome} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-90"><Icon name="home" /></button>
@@ -553,7 +598,8 @@
                                                         <div className={`w-14 h-14 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner ${m.manager === '傅老師' ? 'bg-indigo-50 text-indigo-600 border-2 border-indigo-100' : 'bg-emerald-50 text-emerald-600 border-2 border-emerald-100'}`}>{m.studentName?.[0]}</div>
                                                         <div className="flex gap-1 font-black">
                                                             <button title="編輯個案" onClick={() => { setEditingInfoId(m.id); setEditName(m.studentName); setEditPwd(m.accessPassword); setEditManager(m.manager); }} className="p-3 text-blue-600 hover:bg-blue-50 rounded-2xl transition-all font-black"><Icon name="edit-3" /></button>
-                                                            <button title="刪除個案" onClick={() => deleteStudent(m.id)} className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-all font-black"><Icon name="trash-2" /></button>
+                                                            {/* 更新：點擊垃圾桶時觸發彈窗，而非直接執行刪除 */}
+                                                            <button title="刪除個案" onClick={() => setDeleteConfirmId(m.id)} className="p-3 text-red-600 hover:bg-red-50 rounded-2xl transition-all font-black"><Icon name="trash-2" /></button>
                                                         </div>
                                                     </div>
                                                     {editingInfoId === m.id ? (
@@ -915,7 +961,7 @@
                         )}
 
                         <div className="mt-20 py-10 border-t-4 border-slate-200 text-center font-black font-black font-black font-black">
-                            <div className="opacity-20 font-black text-4xl tracking-[0.5em] uppercase select-none font-black font-black font-black font-black font-black font-black font-black">安東潛能班</div>
+                            <div className="opacity-20 font-black text-4xl tracking-[0.5em] uppercase select-none font-black font-black font-black font-black font-black font-black font-black">潛能班</div>
                         </div>
                     </main>
                 </div>
